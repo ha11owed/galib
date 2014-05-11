@@ -1,10 +1,9 @@
-C++ Base Library.
 MIT License
 
 
 GaLib:
 
-The galib itself does not have any dependencies and because it is header only, it can just be copied and used in any project.
+C++ Base Library. It does not have any dependencies and because it is header only, it can just be copied and used in any project.
 
 
 GaLibTest:
