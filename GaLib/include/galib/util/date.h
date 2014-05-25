@@ -55,6 +55,8 @@ namespace galib {
 
 			bool isValid() const;
 			i64 getTime() const;
+
+			std::time_t toTimeT() const;
 			
 			std::string toStringUTC() const;
 			std::string toString() const;
@@ -70,6 +72,8 @@ namespace galib {
 
 			static DateTime fromTmUTC(const std::tm& timeDate);
 			static DateTime fromTm(const std::tm& timeDate);
+
+			static DateTime fromTimeT(std::time_t t);
 
 			static DateTime now();
 			static DateTime minValue();
@@ -131,11 +135,16 @@ namespace galib {
 		inline bool DateTime::isValid() const {
 			return from1970 > 0;
 		}
+
+		inline std::time_t DateTime::toTimeT() const {
+			std::time_t t = from1970 / 1000;
+			return t;
+		}
 		
 		inline std::tm DateTime::toTmUTC() const {
 			// Return a UTC date in the form: yyyy-MM-dd HH:mm:ss
 			// ex: 2012-03-16 04:50:01
-			std::time_t t = from1970 / 1000;
+			std::time_t t = toTimeT();
 
 			std::tm sTm;
 			gmtime_s(&sTm, &t);
@@ -146,7 +155,7 @@ namespace galib {
 		inline std::tm DateTime::toTm() const {
 			// Return a local date in the form: yyyy-MM-dd HH:mm:ss
 			// ex: 2012-03-16 04:50:01
-			std::time_t t = from1970 / 1000;
+			std::time_t t = toTimeT();
 
 			std::tm sTm;
 #ifdef GALIB_WINDOWS
@@ -161,7 +170,7 @@ namespace galib {
 		inline std::string DateTime::toStringUTC() const {
 			// Return a UTC date in the form: yyyy-MM-dd HH:mm:ss
 			// ex: 2012-03-16 04:50:01
-			std::time_t t = from1970 / 1000;
+			std::time_t t = toTimeT();
 
 			std::tm sTm;
 			gmtime_s(&sTm, &t);
@@ -175,7 +184,7 @@ namespace galib {
 		inline std::string DateTime::toString() const {
 			// Return a local date in the form: yyyy-MM-dd HH:mm:ss
 			// ex: 2012-03-16 04:50:01
-			std::time_t t = from1970 / 1000;
+			std::time_t t = toTimeT();
 
 			std::tm sTm;
 #ifdef GALIB_WINDOWS
@@ -192,7 +201,7 @@ namespace galib {
 
 		inline DateTime DateTime::fromTm(const std::tm& sTm) {
 			std::time_t t = mktime((std::tm*) &sTm);
-			return DateTime(t * 1000);
+			return fromTimeT(t);
 		}
 
 		inline DateTime DateTime::fromTmUTC(const std::tm& sTm) {
@@ -201,6 +210,10 @@ namespace galib {
 #else
 #error "compiler not supported"
 #endif
+			return fromTimeT(t);
+		}
+
+		inline DateTime DateTime::fromTimeT(std::time_t t) {
 			return DateTime(t * 1000);
 		}
 
@@ -243,7 +256,7 @@ namespace galib {
 		inline DateTime DateTime::now() {
 			std::time_t t;
 			time(&t);
-			return DateTime(t * 1000);
+			return fromTimeT(t);
 		}
 
 		inline DateTime DateTime::minValue() {
