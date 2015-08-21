@@ -11,7 +11,7 @@ TEST(DateTest, IsValid) {
 
 	dt = DateTime::now();
 	EXPECT_EQ(true, dt.isValid());
-	EXPECT_EQ(2014, dt.toTm().tm_year + 1900);
+	EXPECT_EQ(2015, dt.toTm().tm_year + 1900);
 }
 
 TEST(DateTest, ParseUTC) {

@@ -42,7 +42,7 @@ namespace galib {
 		// ----
 		template<typename T, Link<T> T::*TLinkField, typename Hash, typename Pred>
 		HashSet<T, TLinkField, Hash, Pred>::HashSet(size_t n) {
-			ASSERT(n > 0);
+			assert(n > 0);
 
 			m_buckets = new Link<T>[n];
 			m_size = n;

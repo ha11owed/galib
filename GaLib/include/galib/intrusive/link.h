@@ -1,8 +1,6 @@
 #ifndef galib_intrusive_link_h__
 #define galib_intrusive_link_h__
 
-#include "../base.h"
-
 namespace galib {
 
 	namespace intrusive {
@@ -58,13 +56,13 @@ namespace galib {
 		
 		template<typename T>
 		Link<T> * Link<T>::getLink(T * data, size_t offset) {
-			ASSERT(data != NULL && offset >= 0);
+			assert(data != NULL && offset >= 0);
 			return (Link<T>*) ( (size_t) data + offset );
 		}
 
 		template<typename T>
 		T* Link<T>::getData(Link<T> * link, size_t offset) {
-			ASSERT(link != NULL && offset >= 0);
+			assert(link != NULL && offset >= 0);
 			return (T*) ( (size_t)link - offset );
 		}
 
@@ -87,7 +85,7 @@ namespace galib {
 
 		template<typename T>
 		void Link<T>::insertAfter(Link<T>* link) {
-			ASSERT(link != NULL);
+			assert(link != NULL);
 			link->removeFromList();
 
 			link->m_next = m_next;
@@ -98,7 +96,7 @@ namespace galib {
 
 		template<typename T>
 		void Link<T>::insertBefore(Link<T>* link) {
-			ASSERT(link != NULL);
+			assert(link != NULL);
 			link->removeFromList();
 
 			link->m_prev = m_prev;
@@ -109,13 +107,13 @@ namespace galib {
 
 		template<typename T>
 		void Link<T>::insertAfter(T* node, size_t offset) {
-			ASSERT(node != NULL);
+			assert(node != NULL);
 			insertAfter(getLink(node, offset));
 		}
 
 		template<typename T>
 		void Link<T>::insertBefore(T* node, size_t offset) {
-			ASSERT(node != NULL);
+			assert(node != NULL);
 			insertBefore(getLink(node, offset));
 		}
 

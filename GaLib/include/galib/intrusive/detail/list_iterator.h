@@ -31,12 +31,12 @@ namespace galib {
 				}
 
 				TReference operator*() {
-					ASSERT(m_currentItem != NULL);
+					assert(m_currentItem != NULL);
 					return *m_currentItem;
 				}
 
 				TPointer operator->() {
-					ASSERT(m_currentItem != NULL);
+					assert(m_currentItem != NULL);
 					return m_currentItem;
 				}
 

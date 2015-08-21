@@ -53,7 +53,7 @@ namespace galib {
 			size_t  m_offset;
 
 			// Hide copy-constructor and assignment operator
-			List (const List &) {};
+			List(const List &) {};
 			List & operator= (const List &) { return *this; };
 		};
 
@@ -66,7 +66,7 @@ namespace galib {
 			auto m = TLinkField;
 			m_offset = *reinterpret_cast<size_t*>(&m);
 		}
-				
+
 		template<typename T, Link<T> T::*TLinkField>
 		List<T, TLinkField>::List(size_t offset) : m_offset(offset) {
 		}
@@ -84,7 +84,7 @@ namespace galib {
 		template<typename T, Link<T> T::*TLinkField>
 		void List<T, TLinkField>::unlinkAll() {
 			Link<T>* link = m_link.nextLink();
-			while(link != &m_link) {
+			while (link != &m_link) {
 				Link<T>* tmp = link;
 				link = link->nextLink();
 				tmp->unlink();
@@ -94,13 +94,13 @@ namespace galib {
 		template<typename T, Link<T> T::*TLinkField>
 		void List<T, TLinkField>::deleteAll() {
 			Link<T>* link = m_link.nextLink();
-			while(link != &m_link) {
+			while (link != &m_link) {
 				Link<T>* tmp = link;
 				link = link->nextLink();
 				delete tmp->owner(m_offset);
 			}
 		}
-		
+
 		template<typename T, Link<T> T::*TLinkField>
 		void List<T, TLinkField>::insertHead(T * node) {
 			m_link.insertAfter(node, m_offset);
@@ -113,24 +113,30 @@ namespace galib {
 
 		template<typename T, Link<T> T::*TLinkField>
 		void List<T, TLinkField>::insertBefore(T * node, T * before) {
-			if(NULL == before)
+			if (NULL == before)
 				m_link.insertBefore(node, m_offset);
 			else
-				before->insertBefore(node, m_offset);
+			{
+				Link<T> *link = Link<T>::getLink(before, m_offset);
+				link->insertBefore(node, m_offset);
+			}
 		}
 
 		template<typename T, Link<T> T::*TLinkField>
 		void List<T, TLinkField>::insertAfter(T * node, T * after) {
-			if(NULL == after)
+			if (NULL == after)
 				m_link.insertBefore(node, m_offset);
 			else
-				after->insertAfter(node, m_offset);
+			{
+				Link<T> *link = Link<T>::getLink(after, m_offset);
+				link->insertAfter(node, m_offset);
+			}
 		}
 
 		template<typename T, Link<T> T::*TLinkField>
 		T* List<T, TLinkField>::head() const {
 			Link<T> *next = m_link.nextLink();
-			if(next == &m_link) 
+			if (next == &m_link)
 				return NULL;
 
 			return Link<T>::getData(next, m_offset);
@@ -139,7 +145,7 @@ namespace galib {
 		template<typename T, Link<T> T::*TLinkField>
 		T* List<T, TLinkField>::tail() const {
 			Link<T> *prev = m_link.prevLink();
-			if(prev == &m_link) 
+			if (prev == &m_link)
 				return NULL;
 
 			return Link<T>::getData(prev, m_offset);
@@ -147,11 +153,11 @@ namespace galib {
 
 		template<typename T, Link<T> T::*TLinkField>
 		T* List<T, TLinkField>::next(T * node) const {
-			if(node == NULL)
+			if (node == NULL)
 				return NULL;
 
 			Link<T> *next = Link<T>::getLink(node, m_offset)->nextLink();
-			if(next == &m_link) 
+			if (next == &m_link)
 				return NULL;
 
 			return Link<T>::getData(next, m_offset);
@@ -159,11 +165,11 @@ namespace galib {
 
 		template<typename T, Link<T> T::*TLinkField>
 		T* List<T, TLinkField>::prev(T * node) const {
-			if(node == null)
+			if (node == null)
 				return NULL;
 
 			Link<T> *prev = Link<T>::getLink(node, m_offset)->prevLink();
-			if(prev == &m_link) 
+			if (prev == &m_link)
 				return NULL;
 
 			return Link<T>::getData(prev, m_offset);

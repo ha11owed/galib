@@ -92,9 +92,9 @@ TEST(IntrusiveTest, NodeInsertAfter1) {
 	Link1 *n3 = new Link1;
 	n3->data = "node3";
 	
-	l1.insertHead(n3);
-	l1.insertHead(n2);
 	l1.insertHead(n1);
+	l1.insertAfter(n3, n1);
+	l1.insertAfter(n2, n1);
 
 	EXPECT_EQ(n1, l1.head());
 	EXPECT_EQ(n3, l1.tail());
