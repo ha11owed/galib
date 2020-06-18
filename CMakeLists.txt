@@ -2,17 +2,18 @@ cmake_minimum_required(VERSION 3.1)
 
 project(galib)
 
-add_executable(${PROJECT_NAME} "main.cpp"
+add_executable(${PROJECT_NAME}
     "intrusive_containers.h"
     "cache.h"
     "file_system.h" "file_system.cpp"
     "process.h" "process.cpp"
 # Tests
-    "intrusive_containers_list_tests.cpp"
-    "intrusive_containers_hashset_tests.cpp"
-    "intrusive_containers_dictionary_tests.cpp"
-    "cache_tests.cpp"
-    "process_tests.cpp"
+    "tests/intrusive_containers_list_tests.cpp"
+    "tests/intrusive_containers_hashset_tests.cpp"
+    "tests/intrusive_containers_dictionary_tests.cpp"
+    "tests/cache_tests.cpp"
+    "tests/process_tests.cpp"
+    "tests/main.cpp"
 # GTest
     "gtest/gtest.h"
     "gtest/gtest-all.cc")

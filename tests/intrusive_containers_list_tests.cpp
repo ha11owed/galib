@@ -149,12 +149,15 @@ TEST(IntrusiveTest, STDIterate) {
 
     int i = 0;
     for (List<Link1, &Link1::m_link1>::const_iterator it = l1.begin(); it != l1.end(); it++) {
-        if (i == 0)
+        if (i == 0) {
             EXPECT_EQ("node1", it->data);
-        if (i == 1)
+        }
+        if (i == 1) {
             EXPECT_EQ("node2", it->data);
-        if (i == 2)
+        }
+        if (i == 2) {
             EXPECT_EQ("node3", it->data);
+        }
 
         i++;
     }

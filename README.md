@@ -14,8 +14,8 @@ They are all cross-platform unless stated otherwise.
 
 # Tests
 
-The tests can only be run on a Linux System and require CMake.
+The tests can only be run on a Linux System and require CMake. They are all found in the *tests* folder.
 
 # License
 
-MIT License
+Dual License (pick the one you like most): MIT or Public Domain.
