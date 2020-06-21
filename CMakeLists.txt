@@ -12,6 +12,7 @@ add_executable(${PROJECT_NAME}
     "tests/intrusive_containers_hashset_tests.cpp"
     "tests/intrusive_containers_dictionary_tests.cpp"
     "tests/cache_tests.cpp"
+    "tests/filesystem_tests.cpp"
     "tests/process_tests.cpp"
     "tests/main.cpp"
 # GTest

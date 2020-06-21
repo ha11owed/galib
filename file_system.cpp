@@ -307,6 +307,178 @@ bool isStrictNormalizedUrl(const std::string &value) {
     return true;
 }
 
+std::vector<std::string> splitPath(const std::string &path) {
+    std::vector<std::string> parts;
+    size_t start = 0;
+    size_t end = 0;
+
+    size_t i = 0;
+    size_t n = path.size();
+
+    for (; i < n; i++) {
+        if (isPathSeparator(path[i])) {
+            start = end = (i + 1);
+        } else {
+            break;
+        }
+    }
+
+    for (; i < n; i++) {
+        if (isPathSeparator(path[i])) {
+            end = i;
+            if (start < end) {
+                parts.push_back(path.substr(start, end - start));
+
+                size_t j = i + 1;
+                for (; j < n; j++) {
+                    if (!isPathSeparator(path[j])) {
+                        break;
+                    }
+                }
+
+                start = j;
+                i = (j - 1);
+            }
+        }
+    }
+
+    if (start > end && start < n - 1) {
+        parts.push_back(path.substr(start));
+    }
+    return parts;
+}
+
+inline void sumBSandS(const std::string &path, int &nBS, int &nS) {
+    for (char c : path) {
+        if (c == '\\') {
+            nBS++;
+        } else if (c == '/') {
+            nS++;
+        }
+    }
+}
+
+bool getRelativePath(const std::string &fromDirPath, const std::string &toDirPath, std::string &out) {
+    std::string result;
+    bool ok = false;
+    bool isFromAbsolute = isAbsolutePath(fromDirPath);
+    bool isToAbsolute = isAbsolutePath(toDirPath);
+    if (isFromAbsolute && isToAbsolute) {
+        int nBS = 0;
+        int nS = 0;
+        sumBSandS(fromDirPath, nBS, nS);
+        sumBSandS(toDirPath, nBS, nS);
+
+        if ((nBS == 0 && nS != 0) || (nBS != 0 && nS == 0)) {
+            const char separator = (nBS > 0) ? '\\' : '/';
+            std::vector<std::string> fromParts = splitPath(fromDirPath);
+            std::vector<std::string> toParts = splitPath(toDirPath);
+            size_t commonLength = 0;
+            size_t l = std::min(fromParts.size(), toParts.size());
+            for (size_t i = 0; i < l; i++) {
+                if (fromParts[i] == toParts[i]) {
+                    commonLength++;
+                } else {
+                    break;
+                }
+            }
+
+            for (size_t i = commonLength; i < fromParts.size(); i++) {
+                result += "..";
+                result += separator;
+            }
+
+            size_t n = toParts.size();
+            if (n > 0) {
+                n--;
+                for (size_t i = commonLength; i < n; i++) {
+                    result += toParts[i];
+                    result += separator;
+                }
+
+                if (commonLength <= n && toDirPath.size() > 0) {
+                    result += toParts[n];
+                    if (toDirPath.back() == separator) {
+                        result += separator;
+                    }
+                }
+            }
+
+            ok = true;
+        }
+    }
+
+    out = result;
+    return ok;
+}
+
+bool getSimplePath(const std::string &path, std::string &out) {
+    bool ok = false;
+    std::string result;
+
+    int nBS = 0;
+    int nS = 0;
+    sumBSandS(path, nBS, nS);
+    if ((nBS == 0 && nS != 0) || (nBS != 0 && nS == 0)) {
+        const char separator = (nBS > 0) ? '\\' : '/';
+        const bool isAbs = isAbsolutePath(path);
+        const size_t nFixed = isAbs && (path[0] != separator) ? 1 : 0;
+        std::vector<std::string> parts = splitPath(path);
+        std::deque<size_t> normalIndexes;
+
+        size_t n = parts.size();
+        for (size_t i = 0; i < n; i++) {
+            if (parts[i] == ".") {
+                parts.erase(parts.begin() + i);
+                i--;
+            } else if (parts[i] == "..") {
+                if (normalIndexes.size() > nFixed) {
+                    parts.erase(parts.begin() + i);
+                    parts.erase(parts.begin() + normalIndexes.back());
+                    normalIndexes.pop_back();
+                    i -= 2;
+                } else if (isAbs) {
+                    parts.erase(parts.begin() + i);
+                    i--;
+                }
+            } else {
+                normalIndexes.push_back(i);
+            }
+        }
+
+        n = parts.size();
+        if (n > 0) {
+            if (isAbs && nFixed == 0) {
+                result += separator;
+            }
+            result += parts[0];
+
+            for (size_t i = 1; i < n; i++) {
+                result += separator;
+                result += parts[i];
+            }
+        }
+
+        out = result;
+        ok = true;
+    }
+    return ok;
+}
+
+bool isAbsolutePath(const std::string &path) {
+    size_t n = path.size();
+    if (n == 0) {
+        return false;
+    }
+    if (path[0] == '/') {
+        return true;
+    }
+    if (n >= 3 && path[1] == ':' && path[2] == '\\') {
+        return true;
+    }
+    return false;
+}
+
 bool isPathSeparator(char value) { return (value == '/') || (value == '\\'); }
 
 } // namespace ga

@@ -45,6 +45,14 @@ std::string getFileExtension(const std::string &filePath);
 
 std::string getFilename(const std::string &filePath);
 
+std::vector<std::string> splitPath(const std::string &path);
+
+bool getRelativePath(const std::string &fromDirPath, const std::string &toDirPath, std::string &out);
+
+bool getSimplePath(const std::string &path, std::string &out);
+
+bool isAbsolutePath(const std::string &path);
+
 bool isPathSeparator(char value);
 
 } // namespace ga
