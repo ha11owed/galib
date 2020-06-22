@@ -45,10 +45,11 @@ struct Process::Impl {
         }
 
         _cmdLines = cmdLines;
-        _cmdLinesRaw.resize(_cmdLines.size());
+        _cmdLinesRaw.resize(_cmdLines.size() + 1);
         for (size_t i = 0; i < _cmdLines.size(); i++) {
             _cmdLinesRaw[i] = _cmdLines[i].c_str();
         }
+        _cmdLinesRaw[_cmdLines.size()] = nullptr;
 
         int options = subprocess_option_inherit_environment | subprocess_option_combined_stdout_stderr;
         int r = subprocess_create(_cmdLinesRaw.data(), options, &_sp);

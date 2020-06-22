@@ -21,7 +21,9 @@ class ProcessTest : public ::testing::Test {
     bool runProcessEx(std::vector<std::string> cmd, int timeoutMs, std::vector<InputLine> input,
                       std::vector<Output> *output) {
         auto start = std::chrono::steady_clock::now();
-        Process p(cmd, [](const auto &_l) { std::cout << "| " << _l << std::endl; });
+        // Use this line to help debugging the output of the process
+        // Process p(cmd, [](const auto &_l) { std::cout << "| " << _l << std::endl; });
+        Process p(cmd);
         Output out;
         out.outputLines = p.readLines(input.empty() ? timeoutMs : input[0].timeoutMs);
         if (output != nullptr) {
@@ -55,7 +57,7 @@ class ProcessTest : public ::testing::Test {
     }
 };
 
-TEST_F(ProcessTest, LS_IGNORED) {
+TEST_F(ProcessTest, LS) {
     std::vector<Output> output;
     ASSERT_TRUE(runProcess({"ls", "/"}, 5000, {}, &output));
 
@@ -65,6 +67,16 @@ TEST_F(ProcessTest, LS_IGNORED) {
     std::set<std::string> lsResult(lines.begin(), lines.end());
     ASSERT_EQ(lines.size(), lsResult.size());
     ASSERT_EQ(1, lsResult.count("bin"));
+}
+
+TEST_F(ProcessTest, ECHO) {
+    std::vector<Output> output;
+    ASSERT_TRUE(runProcess({"echo", "testecho"}, 5000, {}, &output));
+
+    // Check that echo outputs its parameter
+    std::vector<std::string> lines = output[0].outputLines;
+    ASSERT_EQ(1, lines.size());
+    ASSERT_EQ("testecho", lines[0]);
 }
 
 TEST_F(ProcessTest, BASH) {
