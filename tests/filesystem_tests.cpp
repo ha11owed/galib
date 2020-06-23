@@ -66,6 +66,26 @@ TEST(FileSystemTest, split) {
     ASSERT_EQ(expected, actual);
 }
 
+TEST(FileSystemTest, parentPath) {
+    ASSERT_EQ("/d1/", getParent("/d1/file.txt"));
+    ASSERT_EQ("/d1/", getParent("/d1/d2/"));
+    ASSERT_EQ("/d1/", getParent("/d1/d2/."));
+    ASSERT_EQ("/d1/", getParent("/d1/d2/././"));
+    ASSERT_EQ("C:\\d1\\", getParent("C:\\d1\\file.txt"));
+    ASSERT_EQ("C:\\d1\\", getParent("C:\\d1\\d2\\"));
+    ASSERT_EQ("C:\\d1\\", getParent("C:\\d1\\d2\\."));
+    ASSERT_EQ("C:\\d1\\", getParent("C:\\d1\\d2\\.\\.\\"));
+
+    ASSERT_EQ("/../", getParent("/../../"));
+    ASSERT_EQ("/../", getParent("/../.."));
+    ASSERT_EQ("/", getParent("/../."));
+
+    ASSERT_EQ("", getParent("file"));
+    ASSERT_EQ("/../", getParent("/../file.txt"));
+    ASSERT_EQ("/../", getParent("/../file.txt"));
+    ASSERT_EQ("", getParent(""));
+}
+
 TEST(FileSystemTest, simplePathUnixAbs) {
     std::string expected;
     std::string actual;

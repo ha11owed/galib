@@ -307,6 +307,25 @@ bool isStrictNormalizedUrl(const std::string &value) {
     return true;
 }
 
+std::string getParent(const std::string &path) {
+    std::string parent;
+    int n = path.size();
+    int lastPS = n;
+    for (int i = n - 1; i >= 0; i--) {
+        if (isPathSeparator(path[i])) {
+            int d = lastPS - i;
+            if ((d < 2) || (d == 2 && path[i + 1] == '.')) {
+                lastPS = i;
+                continue;
+            }
+
+            parent = path.substr(0, i + 1);
+            break;
+        }
+    }
+    return parent;
+}
+
 std::vector<std::string> splitPath(const std::string &path) {
     std::vector<std::string> parts;
     size_t start = 0;

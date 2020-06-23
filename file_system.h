@@ -45,6 +45,8 @@ std::string getFileExtension(const std::string &filePath);
 
 std::string getFilename(const std::string &filePath);
 
+std::string getParent(const std::string &path);
+
 std::vector<std::string> splitPath(const std::string &path);
 
 bool getRelativePath(const std::string &fromDirPath, const std::string &toDirPath, std::string &out);
