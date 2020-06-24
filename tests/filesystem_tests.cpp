@@ -164,3 +164,11 @@ TEST(FileSystemTest, relativePathMOk) {
     ASSERT_EQ(false, getRelativePath(".", "C:\\abc\\", actual));
     ASSERT_EQ(expected, actual);
 }
+
+TEST(FileSystemTest, DISABLED_exists) {
+    ASSERT_TRUE(pathExists("/usr/bin/"));
+    ASSERT_TRUE(pathExists("/usr/bin/bash"));
+
+    ASSERT_FALSE(pathExists("/usr/bin32242/"));
+    ASSERT_FALSE(pathExists("/usr/bin/bash34235"));
+}

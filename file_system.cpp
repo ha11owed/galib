@@ -4,6 +4,16 @@
 #include <fstream>
 #include <memory>
 
+#ifdef _WIN32
+#include <io.h>
+#define access _access_s
+#ifndef F_OK
+#define F_OK 0
+#endif
+#else
+#include <unistd.h>
+#endif
+
 namespace ga {
 
 namespace detail {
@@ -201,6 +211,14 @@ bool readFile(const std::string &inFile, std::string &outBytes) {
     outBytes.resize(static_cast<size_t>(length));
     file.read(static_cast<char *>(outBytes.data()), length);
     return true;
+}
+
+bool pathExists(const std::string &path) {
+    bool exists = false;
+    if (!path.empty()) {
+        exists = (access(path.c_str(), F_OK) == 0);
+    }
+    return exists;
 }
 
 const char *getFileExtension(const char *filePath) {
