@@ -98,3 +98,10 @@ TEST_F(ProcessTest, BASH) {
     ASSERT_EQ("exit", output[2].inputLine);
     ASSERT_EQ(0, output[2].outputLines.size());
 }
+
+TEST_F(ProcessTest, SLEEP_KILL) {
+    std::vector<std::string> cmd{"sleep", "5"};
+    Process p(cmd);
+    p.kill();
+    p.kill();
+}

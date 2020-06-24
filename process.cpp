@@ -238,8 +238,15 @@ struct Process::Impl {
         {
             std::lock_guard<std::mutex> g(_mutex);
             _isRunning = false;
-            subprocess_terminate(&_sp);
-            subprocess_destroy(&_sp);
+
+            // Prevent double deletion of the process.
+            if (_sp.stdin_file) {
+                subprocess_terminate(&_sp);
+                subprocess_destroy(&_sp);
+                _sp.stdin_file = nullptr;
+                _sp.stdout_file = nullptr;
+                _sp.stderr_file = nullptr;
+            }
         }
 
         if (_readThread.joinable()) {
@@ -304,12 +311,12 @@ int Process::kill() {
 }
 
 int Process::join() {
-    if (_impl) {
+    if (!_impl) {
         return -1;
     }
     int retCode;
     _impl->join(retCode);
-    return 0;
+    return retCode;
 }
 
 } // namespace ga
