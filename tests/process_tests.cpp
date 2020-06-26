@@ -105,3 +105,11 @@ TEST_F(ProcessTest, SLEEP_KILL) {
     p.kill();
     p.kill();
 }
+
+TEST_F(ProcessTest, EXIT_JOIN) {
+    std::vector<std::string> cmd{"bash"};
+    Process p(cmd);
+    p.writeLine("sleep 0");
+    p.writeLine("exit 123");
+    ASSERT_EQ(123, p.join());
+}
