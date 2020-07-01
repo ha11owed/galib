@@ -93,3 +93,7 @@ install_manifest.txt
 compile_commands.json
 CTestTestfile.cmake
 _deps
+#CMake build folders
+build-*-Debug/
+build-*-Default/
+build-*-Release/
