@@ -186,6 +186,20 @@ class Directory {
 
 } // namespace detail
 
+// ==== helpers ====
+
+inline void sumBSandS(const std::string &path, int &nBS, int &nS) {
+    for (char c : path) {
+        if (c == '\\') {
+            nBS++;
+        } else if (c == '/') {
+            nS++;
+        }
+    }
+}
+
+// ==== public ====
+
 void findInDirectory(const std::string &rootPath, OnChildEntry onChildEntry, const DirectorySearch &filter) {
     detail::Directory d(rootPath);
     d.setFilter(filter);
@@ -344,6 +358,33 @@ std::string getParent(const std::string &path) {
     return parent;
 }
 
+std::string combine(const std::string &a, const std::string &b) {
+    std::string r(a);
+
+    size_t n = a.size();
+    size_t m = b.size();
+
+    if (n != 0 && m != 0) {
+        bool aPS = isPathSeparator(a.back());
+        bool bPS = isPathSeparator(b.front());
+        if (aPS && bPS) {
+            r += b.substr(1);
+        } else if (!aPS && !bPS) {
+            int nBS = 0, nS = 0;
+            sumBSandS(a, nBS, nS);
+            sumBSandS(b, nBS, nS);
+            r += (nBS > 0) ? '\\' : '/';
+            r += b;
+        } else {
+            r += b;
+        }
+    } else {
+        r += b;
+    }
+
+    return r;
+}
+
 std::vector<std::string> splitPath(const std::string &path) {
     std::vector<std::string> parts;
     size_t start = 0;
@@ -383,16 +424,6 @@ std::vector<std::string> splitPath(const std::string &path) {
         parts.push_back(path.substr(start));
     }
     return parts;
-}
-
-inline void sumBSandS(const std::string &path, int &nBS, int &nS) {
-    for (char c : path) {
-        if (c == '\\') {
-            nBS++;
-        } else if (c == '/') {
-            nS++;
-        }
-    }
 }
 
 bool getRelativePath(const std::string &fromDirPath, const std::string &toDirPath, std::string &out) {
@@ -463,8 +494,7 @@ bool getSimplePath(const std::string &path, std::string &out) {
         std::vector<std::string> parts = splitPath(path);
         std::deque<size_t> normalIndexes;
 
-        size_t n = parts.size();
-        for (size_t i = 0; i < n; i++) {
+        for (size_t i = 0; i < parts.size(); i++) {
             if (parts[i] == ".") {
                 parts.erase(parts.begin() + i);
                 i--;
@@ -483,7 +513,7 @@ bool getSimplePath(const std::string &path, std::string &out) {
             }
         }
 
-        n = parts.size();
+        size_t n = parts.size();
         if (n > 0) {
             if (isAbs && nFixed == 0) {
                 result += separator;

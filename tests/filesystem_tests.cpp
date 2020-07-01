@@ -29,6 +29,23 @@ TEST(FileSystemTest, absolutePathWindows) {
     }
 }
 
+TEST(FileSystemTest, combine) {
+    std::string expected;
+    std::string actual;
+
+    expected = "a/b";
+    actual = combine("a", "b");
+    ASSERT_EQ(expected, actual);
+
+    expected = "a/b/c";
+    actual = combine("a/b", "/c");
+    ASSERT_EQ(expected, actual);
+
+    expected = "a/b/c/d";
+    actual = combine("a/b/c/", "/d");
+    ASSERT_EQ(expected, actual);
+}
+
 TEST(FileSystemTest, split) {
     std::vector<std::string> expected;
     std::vector<std::string> actual;
