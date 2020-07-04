@@ -1,0 +1,10 @@
+{
+    "projects": [
+        {
+            "path": "*",
+            "sdkPath": "/home/alin/sdks5/curr/",
+            "cmdEnvironment": "",
+            "cmdReplacement": { "mcmake": "${sdkPath}usr/bin/cmake" }
+        }
+    ]
+}

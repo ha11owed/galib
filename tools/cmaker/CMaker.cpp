@@ -2,6 +2,7 @@
 
 #include "file_system.h"
 #include "json.hpp"
+#include "loguru.hpp"
 #include "process.h"
 #include "tinyxml2.h"
 #include "whereami.h"
@@ -10,12 +11,18 @@
 #include <iostream>
 #include <sstream>
 
-namespace ga {
+#ifdef CMAKER_WITH_UNIT_TESTS
+#include "gtest/gtest.h"
+#endif
+
+namespace gatools {
 
 using XmlElemPtr = tinyxml2::XMLElement *;
 using XmlElemParentPair = std::pair<XmlElemPtr, XmlElemPtr>;
 
 struct CMaker::Impl {
+    using WriteFileCb = std::function<void(const std::string &filePath, const std::string &content)>;
+
     struct CMakeInput {
         std::string configFilePath;
         std::set<std::string> configFileNames;
@@ -30,6 +37,23 @@ struct CMaker::Impl {
         std::vector<std::string> extraAddDirectory;
         std::set<std::string> gccClangFixes;
         bool overrideFiles = true;
+        bool outputToStdout = true;
+        std::string cmdEnvironment;
+        std::map<std::string, std::string> cmdReplacement;
+
+        void log() const {
+            LOG_F(INFO, "CMakeInput {");
+            LOG_F(INFO, "  configFilePath: %s", configFilePath.c_str());
+            LOG_IF_F(INFO, !pwd.empty(), "  pwd: %s", pwd.c_str());
+            LOG_F(INFO, "  projectDir: %s", projectDir.c_str());
+            LOG_F(INFO, "  buildDir:   %s", buildDir.c_str());
+            LOG_F(INFO, "  sdkDir:     %s", sdkDir.c_str());
+            LOG_F(INFO, "  virtualFolderPrefix: %s", virtualFolderPrefix.c_str());
+            LOG_IF_F(INFO, !oldSdkPrefix.empty(), "  oldSdkPrefix: %s", oldSdkPrefix.c_str());
+            LOG_IF_F(INFO, !oldVirtualFolderPrefix.empty(), "  oldVirtualFolderPrefix: %s",
+                     oldVirtualFolderPrefix.c_str());
+            LOG_F(INFO, "}");
+        }
     };
 
     struct CMakeOutput {
@@ -38,8 +62,23 @@ struct CMaker::Impl {
         std::set<std::string> errors;
     };
 
+    enum class PatchResult { Changed, Unchanged, Error };
+
+    const char *asString(PatchResult value) {
+        switch (value) {
+        case PatchResult::Changed:
+            return "Changed";
+        case PatchResult::Unchanged:
+            return "Unchanged";
+        case PatchResult::Error:
+            return "Error";
+        }
+        return "Unknown PatchResult";
+    }
+
     CMakeInput in;
     CMakeOutput out;
+    WriteFileCb writeFileCb;
 
     void split(const std::string &input, const std::string &separator, std::vector<std::string> &parts) {
         size_t start = 0;
@@ -65,6 +104,17 @@ struct CMaker::Impl {
             }
         }
         return ss.str();
+    }
+
+    void replaceAll(const std::string &from, const std::string &to, std::string &inOutStr) {
+        if (from.empty()) {
+            return;
+        }
+        size_t start_pos = 0;
+        while ((start_pos = inOutStr.find(from, start_pos)) != std::string::npos) {
+            inOutStr.replace(start_pos, from.length(), to);
+            start_pos += to.length();
+        }
     }
 
     void cleanPathSeparators(std::string &path, char separator) {
@@ -103,18 +153,12 @@ struct CMaker::Impl {
         elem->SetAttribute(attrName, value.c_str());
     }
 
-    void addPrefixToVirtualFolder(XmlElemPtr elem, const char *attrName) {
-        std::string value;
-        if (!getAttribute(elem, attrName, value)) {
-            return;
-        }
-
+    void addPrefixToVirtualFolder(std::string &value) {
         const std::string DELIMIT = ";";
         std::vector<std::string> parts;
         split(value, DELIMIT, parts);
 
         const std::string CMakeFiles_BS = "CMake Files\\";
-        const std::string BS_USR = "\\usr";
         size_t n = parts.size();
         for (size_t i = 0; i < n; i++) {
             std::string part = parts[i];
@@ -125,18 +169,19 @@ struct CMaker::Impl {
             }
 
             std::string virtualPath(part.substr(CMakeFiles_BS.size()));
-            if (virtualPath.find(in.oldVirtualFolderPrefix) == 0) {
+            if (in.oldVirtualFolderPrefix.size() > 0 && virtualPath.find(in.oldVirtualFolderPrefix) == 0) {
                 // replace the old virtual folder prefix with the new one
                 virtualPath = virtualPath.substr(in.oldVirtualFolderPrefix.size());
                 virtualPath = in.virtualFolderPrefix + virtualPath;
             } else {
                 // check if the path is inside the source dir
-                std::string simpleVirtualPath = combine(in.buildDir, virtualPath);
-                cleanPathSeparators(simpleVirtualPath, '\\');
+                std::string simpleVirtualPath = ga::combine(in.buildDir, part);
+                cleanPathSeparators(simpleVirtualPath, '/');
                 ga::getSimplePath(simpleVirtualPath, simpleVirtualPath);
-                if (simpleVirtualPath.find("..") == 0) {
+                if (simpleVirtualPath.find("/usr/") == 0) {
                     // virtual must be put in the SDK
-                    simpleVirtualPath = combine(in.virtualFolderPrefix, simpleVirtualPath);
+                    simpleVirtualPath = ga::combine(in.virtualFolderPrefix, simpleVirtualPath);
+                    cleanPathSeparators(simpleVirtualPath, '\\');
                     virtualPath = simpleVirtualPath;
                 }
             }
@@ -151,6 +196,15 @@ struct CMaker::Impl {
                 value += parts[i];
             }
         }
+    }
+
+    void addPrefixToVirtualFolder(XmlElemPtr elem, const char *attrName) {
+        std::string value;
+        if (!getAttribute(elem, attrName, value)) {
+            return;
+        }
+
+        addPrefixToVirtualFolder(value);
 
         elem->SetAttribute(attrName, value.c_str());
     }
@@ -223,6 +277,33 @@ struct CMaker::Impl {
         }
     }
 
+    /// @brief get a vector of the directories that should be used for searching in the order of search priority
+    std::vector<std::string> getConfigSearchDirs() const {
+        std::set<std::string> searchDirsSet;
+        std::vector<std::string> searchDirs;
+
+        std::vector<std::pair<std::string, int>> searches;
+        searches.emplace_back(std::make_pair(in.projectDir, 3));
+        searches.emplace_back(std::make_pair(in.buildDir, 2));
+
+        for (const auto &kv : searches) {
+            std::string searchDir = kv.first;
+            for (int i = 0; i < kv.second; i++) {
+                auto it = searchDirsSet.find(searchDir);
+                if (it != searchDirsSet.end()) {
+                    break;
+                }
+                if (!ga::pathExists(searchDir)) {
+                    break;
+                }
+                searchDirs.push_back(searchDir);
+                searchDir = ga::getParent(searchDir);
+            }
+        }
+
+        return searchDirs;
+    }
+
     std::string getModuleDir() const {
         char buffer[1024 * 64];
         int dirLen;
@@ -230,27 +311,59 @@ struct CMaker::Impl {
 
         std::string dir;
         if (n > 0 && dirLen > 0) {
-            dir.append(buffer, dirLen);
+            dir.append(buffer, static_cast<size_t>(dirLen));
         }
         return dir;
     }
 
     int exec(const std::vector<std::string> &args, const std::string &pwd) {
-        bool patchCbp = preparePatchCBPs(args, pwd);
+        // Log the input parameters
+        LOG_F(INFO, "exec");
+        for (size_t i = 0; i < args.size(); i++) {
+            LOG_F(INFO, "exec arg[%lu]: %s", i, args[i].c_str());
+        }
+        LOG_F(INFO, "exec pwd: %s", pwd.c_str());
+
+        bool patchCbp = false;
+        bool hasConfig = readConfiguration(args, pwd, patchCbp);
+        LOG_F(INFO, "exec hasConfig: %d", hasConfig);
+        LOG_F(INFO, "exec patchCbp: %d", patchCbp);
+
+        int retCode = -1;
+        if (args.size() == 0) {
+            LOG_F(ERROR, "exec empty args");
+        } else {
+            auto replIt = in.cmdReplacement.find(args[0]);
+            if (replIt != in.cmdReplacement.end()) {
+                LOG_F(INFO, "exec cmdReplacement: %s", replIt->second.c_str());
+                std::vector<std::string> argsR(args);
+                argsR[0] = replIt->second;
+
+                retCode = execCMake(argsR);
+            } else {
+                retCode = execCMake(args);
+            }
+        }
         if (patchCbp) {
             patchCBPs();
         }
 
-        return execCMake(args);
+        // Log the return code and return
+        LOG_F(INFO, "exec retCode: %d", retCode);
+        return retCode;
     }
+
+    void writeCbp(WriteFileCb cb) { writeFileCb = cb; }
 
     /// @brief gather the parameters for patching the .cbp files to use a SDK.
     /// @return true if the CBPs should be patched and the parameters have been gathered.
-    bool preparePatchCBPs(const std::vector<std::string> &args, const std::string &pwd) {
-        bool patchCbp = false;
+    bool readConfiguration(const std::vector<std::string> &args, const std::string &pwd, bool patchCbp) {
+        LOG_F(INFO, "preparePatchCBPs");
+
+        patchCbp = false;
 
         if (args.size() >= 2) {
-            patchCbp = pathExists(args[1]);
+            patchCbp = ga::pathExists(args[1]);
         }
 
         if (!patchCbp) {
@@ -267,18 +380,17 @@ struct CMaker::Impl {
             in.buildDir = in.pwd;
         }
 
-        DirectorySearch ds;
+        ga::DirectorySearch ds;
         ds.maxRecursionLevel = 0;
         ds.includeFiles = true;
         ds.includeDirectories = false;
 
         std::set<std::string> configFilePaths;
-
-        std::string searchDir = in.projectDir;
-        for (int i = 0; i < 3; i++) {
-            findInDirectory(
+        std::vector<std::string> searchDirs = getConfigSearchDirs();
+        for (const std::string &searchDir : searchDirs) {
+            ga::findInDirectory(
                 searchDir,
-                [this, &configFilePaths](const ChildEntry &entry) {
+                [this, &configFilePaths](const ga::ChildEntry &entry) {
                     if (in.configFileNames.find(entry.name) != in.configFileNames.end()) {
                         configFilePaths.insert(entry.path);
                     }
@@ -288,7 +400,6 @@ struct CMaker::Impl {
             if (!configFilePaths.empty()) {
                 break;
             }
-            searchDir = getParent(searchDir);
         }
 
         for (const std::string &configFilePath : configFilePaths) {
@@ -318,6 +429,16 @@ struct CMaker::Impl {
             }
 
             if (!hasProject) {
+                for (size_t i = 0; i < jProjects.size(); i++) {
+                    jProject = jProjects.at(i);
+                    if (jProject["path"] == "*") {
+                        hasProject = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!hasProject) {
                 out.errors.insert(configFilePath + " does not contain the project " + in.projectDir);
                 break;
             }
@@ -329,13 +450,132 @@ struct CMaker::Impl {
             for (const auto &kv : jProject["extraAddDirectory"].items()) {
                 in.extraAddDirectory.push_back(kv.value().get<std::string>());
             }
+
+            // Output
             in.overrideFiles = jProject.value("overrideFiles", true);
+            in.outputToStdout = jProject.value("outputToStdout", true);
+
+            // CMD
+            in.cmdEnvironment = jProject.value("cmdEnvironment", "");
+            std::string sdkDirWithS(in.sdkDir + "/");
+            for (const auto &kv : jProject["cmdReplacement"].items()) {
+                std::string value = kv.value();
+                replaceAll("${sdkPath}", sdkDirWithS, value);
+                ga::getSimplePath(value, value);
+                in.cmdReplacement[kv.key()] = value;
+            }
 
             in.configFilePath = configFilePath;
             break;
         }
 
         return !in.sdkDir.empty();
+    }
+
+    /// @brief patch the .cbp at the filePath.
+    PatchResult patchCBP(const std::string &filePath, tinyxml2::XMLDocument &inXml) {
+        PatchResult patchResult = PatchResult::Error;
+
+        // will contain the relative path from the directory of the filePath to the sdk folder
+        std::string virtualFolderPrefix;
+        std::string dir = ga::getParent(filePath);
+        if (!ga::getRelativePath(dir, in.sdkDir, virtualFolderPrefix)) {
+            out.errors.insert("cannot get relative path: " + dir + " => " + in.sdkDir);
+            return patchResult;
+        }
+
+        cleanPathSeparators(virtualFolderPrefix, '\\');
+        in.virtualFolderPrefix = "..\\" + virtualFolderPrefix;
+        in.log();
+
+        bool hasNotes = false;
+
+        tinyxml2::XMLPrinter printerIn;
+        inXml.Print(&printerIn);
+        std::string original(printerIn.CStr());
+
+        std::deque<XmlElemParentPair> q;
+        enqueueWithSiblings(inXml.FirstChildElement(), nullptr, q);
+
+        while (!q.empty()) {
+            XmlElemParentPair currPair = q.front();
+            XmlElemPtr curr = currPair.first;
+            XmlElemPtr parentElem = currPair.second;
+            q.pop_front();
+
+            std::string parent;
+            if (parentElem != nullptr && parentElem->Name() != nullptr) {
+                parent = parentElem->Name();
+            }
+
+            const char *name_cstr = curr->Name();
+            if (name_cstr == nullptr) {
+                continue;
+            }
+
+            std::string name(name_cstr);
+
+            if (parent == "Compiler" && name == "Add") {
+                addPrefix(curr, "directory", in.sdkDir);
+            } else if (name == "Unit") {
+                addPrefix(curr, "filename", in.sdkDir);
+            } else if (parent == "MakeCommands") {
+                static std::set<std::string> makeCommandChildren = {"Build", "CompileFile", "Clean", "DistClean"};
+                if (makeCommandChildren.find(name) != makeCommandChildren.end()) {
+                    /// @todo maybe replace the commands with our own set?
+                    // addPrefix(curr, "command", in.sdkDir);
+                }
+            } else if (parent == "Unit" && name == "Option") {
+                addPrefixToVirtualFolder(curr, "virtualFolder");
+            } else if (parent == "Project" && name == "Option") {
+                // In the Project section there will be multiple Option children.
+                if (readNote(curr)) {
+                    hasNotes = true;
+                } else {
+                    if (!hasNotes) {
+                        createNote(parentElem);
+                        hasNotes = true;
+                    }
+                    addPrefixToVirtualFolder(curr, "virtualFolders");
+                }
+            }
+
+            enqueueWithSiblings(curr->FirstChildElement(), curr, q);
+
+            if (name == "Compiler") {
+                for (const std::string &addDir : in.extraAddDirectory) {
+                    XmlElemPtr elem = curr->InsertNewChildElement("Add");
+                    elem->SetAttribute("directory", addDir.c_str());
+                    addPrefix(elem, "directory", in.sdkDir);
+                }
+
+                // Add the options at the beginning of the Compiler section
+                for (const std::string &addOption : in.extraAddDirectory) {
+                    XmlElemPtr elem = curr->InsertNewChildElement("Add");
+                    elem->SetAttribute("option", addOption.c_str());
+                    curr->InsertFirstChild(elem);
+                }
+            }
+        }
+
+        tinyxml2::XMLPrinter printerOut;
+        inXml.Print(&printerOut);
+        std::string modified(printerOut.CStr());
+
+        out.originalFileContent[filePath] = original;
+
+        bool isModified = (original != modified);
+        if (isModified) {
+            out.modifiedFileContent[filePath] = modified;
+            patchResult = PatchResult::Changed;
+            if (writeFileCb) {
+                writeFileCb(filePath, modified);
+            }
+        } else {
+            patchResult = PatchResult::Unchanged;
+        }
+
+        return patchResult;
     }
 
     /// @brief patch the .cbp files from the build directory.
@@ -359,116 +599,37 @@ struct CMaker::Impl {
             tinyxml2::XMLError error = inXml.LoadFile(filePath.c_str());
             if (error != tinyxml2::XML_SUCCESS) {
                 out.errors.insert(filePath + " cannot be loaded");
+                continue;
+            }
+
+            PatchResult patchResult = patchCBP(filePath, inXml);
+
+            LOG_F(INFO, "patchCBPs filePath: %s PatchResult: %s", in.sdkDir.c_str(), asString(patchResult));
+            if (in.outputToStdout) {
+                std::cout << filePath << " PatchResult: " << asString(patchResult) << std::endl;
+            }
+
+            switch (patchResult) {
+            case PatchResult::Changed:
+                if (in.overrideFiles && !writeFileCb) {
+                    std::string outFile = filePath + ".txt";
+                    inXml.SaveFile(outFile.c_str());
+                }
                 break;
-            }
-
-            // will contain the relative path from the directory of the filePath to the sdk folder
-            std::string virtualFolderPrefix;
-            std::string dir = ga::getParent(filePath);
-            if (!ga::getRelativePath(dir, in.sdkDir, virtualFolderPrefix)) {
-                out.errors.insert("cannot get relative path: " + dir + " => " + in.sdkDir);
+            case PatchResult::Unchanged:
                 break;
-            }
-            for (char &c : virtualFolderPrefix) {
-                if (c == '/') {
-                    c = '\\';
-                }
-            }
-            in.virtualFolderPrefix = virtualFolderPrefix;
-
-            bool hasNotes = false;
-
-            tinyxml2::XMLPrinter printerIn;
-            inXml.Print(&printerIn);
-            std::string original(printerIn.CStr(), printerIn.CStrSize());
-
-            std::deque<XmlElemParentPair> q;
-            enqueueWithSiblings(inXml.FirstChildElement(), nullptr, q);
-
-            while (!q.empty()) {
-                XmlElemParentPair currPair = q.front();
-                XmlElemPtr curr = currPair.first;
-                XmlElemPtr parentElem = currPair.second;
-                q.pop_front();
-
-                std::string parent;
-                if (parentElem != nullptr && parentElem->Name() != nullptr) {
-                    parent = parentElem->Name();
-                }
-
-                const char *name_cstr = curr->Name();
-                if (name_cstr == nullptr) {
-                    continue;
-                }
-
-                std::string name(name_cstr);
-
-                if (parent == "Compiler" && name == "Add") {
-                    addPrefix(curr, "directory", in.sdkDir);
-                } else if (name == "Unit") {
-                    addPrefix(curr, "filename", in.sdkDir);
-                } else if (parent == "MakeCommands") {
-                    static std::set<std::string> makeCommandChildren = {"Build", "CompileFile", "Clean", "DistClean"};
-                    if (makeCommandChildren.find(name) != makeCommandChildren.end()) {
-                        addPrefix(curr, "command", in.sdkDir);
-                    }
-                } else if (parent == "Unit" && name == "Option") {
-                    addPrefixToVirtualFolder(curr, "virtualFolder");
-                } else if (parent == "Project" && name == "Option") {
-                    // In the Project section there will be multiple Option children.
-                    if (readNote(curr)) {
-                        hasNotes = true;
-                    } else {
-                        if (!hasNotes) {
-                            createNote(parentElem);
-                            hasNotes = true;
-                        }
-                        addPrefixToVirtualFolder(curr, "virtualFolders");
-                    }
-                }
-
-                enqueueWithSiblings(curr->FirstChildElement(), curr, q);
-
-                if (name == "Compiler") {
-                    for (const std::string &addDir : in.extraAddDirectory) {
-                        XmlElemPtr elem = curr->InsertNewChildElement("Add");
-                        elem->SetAttribute("directory", addDir.c_str());
-                        addPrefix(elem, "directory", in.sdkDir);
-                    }
-
-                    // Add the options at the beginning of the Compiler section
-                    for (const std::string &addOption : in.extraAddDirectory) {
-                        XmlElemPtr elem = curr->InsertNewChildElement("Add");
-                        elem->SetAttribute("option", addOption.c_str());
-                        curr->InsertFirstChild(elem);
-                    }
-                }
-            }
-
-            tinyxml2::XMLPrinter printerOut;
-            inXml.Print(&printerOut);
-            std::string modified(printerOut.CStr(), printerOut.CStrSize());
-
-            out.originalFileContent[filePath] = original;
-            if (original != modified) {
-                out.modifiedFileContent[filePath] = modified;
-            }
-
-            if (in.overrideFiles) {
-                std::string outFile = filePath + ".txt";
-                inXml.SaveFile(outFile.c_str());
-            }
-
-            if (original != modified) {
-                std::cout << filePath << " was patched" << std::endl;
-            } else {
-                std::cout << filePath << " was already patched" << std::endl;
+            case PatchResult::Error:
+                break;
             }
         }
 
-        std::cout << "SDK:    " << in.sdkDir << std::endl;
-        std::cout << "config: " << in.configFilePath << std::endl;
-        std::cout << "Finished patching..." << std::endl;
+        LOG_F(INFO, "patchCBPs SDK:    %s", in.sdkDir.c_str());
+        LOG_F(INFO, "patchCBPs config: %s", in.configFilePath.c_str());
+        if (in.outputToStdout) {
+            std::cout << "SDK:    " << in.sdkDir << std::endl;
+            std::cout << "config: " << in.configFilePath << std::endl;
+            std::cout << "Finished patching..." << std::endl;
+        }
     }
 
     int execCMake(const std::vector<std::string> &args) {
@@ -486,7 +647,7 @@ struct CMaker::Impl {
 
             std::string cdCmd = "cd " + in.pwd;
             std::string cmakeCmd = "cmake";
-            for (int i = 1; i < args.size(); i++) {
+            for (size_t i = 1; i < args.size(); i++) {
                 cmakeCmd += " ";
                 cmakeCmd += args[i];
             }
@@ -519,6 +680,14 @@ CMaker::CMaker()
 
 CMaker::~CMaker() {}
 
+std::string CMaker::getModuleDir() const {
+    std::string r;
+    if (_impl) {
+        r = _impl->getModuleDir();
+    }
+    return r;
+}
+
 int CMaker::exec(const std::vector<std::string> &args, const std::string &pwd) {
     int r = -1;
     if (_impl) {
@@ -527,4 +696,73 @@ int CMaker::exec(const std::vector<std::string> &args, const std::string &pwd) {
     return r;
 }
 
-} // namespace ga
+void CMaker::writeCbp(WriteFileCb writeFileCb) {
+    if (_impl) {
+        _impl->writeCbp(writeFileCb);
+    }
+}
+
+} // namespace gatools
+
+#ifdef CMAKER_WITH_UNIT_TESTS
+
+using namespace gatools;
+
+class CMakerTest : public ::testing::Test {
+  public:
+    CMakerTest() {
+        cmaker.writeCbp([this](const std::string &path, const std::string &content) {
+            cbpPathAndContents.push_back(make_pair(path, content));
+        });
+
+        impl = cmaker._impl;
+        impl->in.projectDir = "/home/testuser/project";
+        impl->in.pwd = impl->in.projectDir;
+        impl->in.buildDir = "/home/testuser/build-proj";
+        impl->in.sdkDir = "/home/testuser/sdks/v42";
+        impl->in.outputToStdout = false;
+    }
+
+    CMaker cmaker;
+    std::shared_ptr<CMaker::Impl> impl;
+    std::vector<std::pair<std::string, std::string>> cbpPathAndContents;
+};
+
+TEST_F(CMakerTest, VirtualFoldersNoChange) {
+
+    std::string value = "CMake Files\\;CMake Files\\..\\;CMake Files\\..\\..\\;CMake Files\\..\\..\\..\\";
+    std::string expected = "CMake Files\\;CMake Files\\..\\;CMake Files\\..\\..\\;CMake Files\\..\\..\\..\\";
+    impl->addPrefixToVirtualFolder(value);
+    ASSERT_EQ(expected, value);
+}
+
+TEST_F(CMakerTest, VirtualFoldersChange) {
+
+    impl->in.virtualFolderPrefix = "..\\..\\sdk\\v43";
+    std::string value = "CMake Files\\..\\..\\..\\..\\usr\\include\\someotherlib";
+    std::string expected = "CMake Files\\..\\..\\sdk\\v43\\usr\\include\\someotherlib";
+    impl->addPrefixToVirtualFolder(value);
+    ASSERT_EQ(expected, value);
+}
+
+TEST_F(CMakerTest, PatchCBPs) {
+
+    std::string expectedTestprojectCbpOutput;
+    ASSERT_TRUE(ga::readFile("testproject_output.cbp.xml", expectedTestprojectCbpOutput));
+
+    // Transform the original xml
+    tinyxml2::XMLDocument inXml;
+    inXml.LoadFile("testproject_input.cbp");
+    auto patchResult = impl->patchCBP("/home/testuser/build-proj/testproject_input.cbp", inXml);
+
+    ASSERT_EQ(CMaker::Impl::PatchResult::Changed, patchResult);
+    ASSERT_EQ(1, cbpPathAndContents.size());
+    ASSERT_EQ(expectedTestprojectCbpOutput, cbpPathAndContents[0].second);
+
+    // Already transformed. Nothing will be done
+    patchResult = impl->patchCBP("/home/testuser/build-proj/testproject_input.cbp", inXml);
+
+    ASSERT_EQ(CMaker::Impl::PatchResult::Unchanged, patchResult);
+    ASSERT_EQ(1, cbpPathAndContents.size());
+}
+#endif
