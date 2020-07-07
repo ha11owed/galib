@@ -56,12 +56,6 @@ struct CMaker::Impl {
         }
     };
 
-    struct CMakeOutput {
-        std::map<std::string, std::string> originalFileContent;
-        std::map<std::string, std::string> modifiedFileContent;
-        std::set<std::string> errors;
-    };
-
     enum class PatchResult { Changed, Unchanged, Error };
 
     const char *asString(PatchResult value) {
@@ -77,7 +71,6 @@ struct CMaker::Impl {
     }
 
     CMakeInput in;
-    CMakeOutput out;
     WriteFileCb writeFileCb;
 
     void split(const std::string &input, const std::string &separator, std::vector<std::string> &parts) {
@@ -324,9 +317,9 @@ struct CMaker::Impl {
         }
         LOG_F(INFO, "exec pwd: %s", pwd.c_str());
 
-        bool patchCbp = false;
-        bool hasConfig = readConfiguration(args, pwd, patchCbp);
+        bool hasConfig = readConfiguration(pwd);
         LOG_F(INFO, "exec hasConfig: %d", hasConfig);
+        bool patchCbp = canPatchCBP(args);
         LOG_F(INFO, "exec patchCbp: %d", patchCbp);
 
         int retCode = -1;
@@ -341,7 +334,7 @@ struct CMaker::Impl {
 
                 retCode = execCMake(argsR);
             } else {
-                retCode = execCMake(args);
+                LOG_F(ERROR, "exec cmdReplacement for: %s does not exist", args[0].c_str());
             }
         }
         if (patchCbp) {
@@ -357,22 +350,33 @@ struct CMaker::Impl {
 
     /// @brief gather the parameters for patching the .cbp files to use a SDK.
     /// @return true if the CBPs should be patched and the parameters have been gathered.
-    bool readConfiguration(const std::vector<std::string> &args, const std::string &pwd, bool patchCbp) {
-        LOG_F(INFO, "preparePatchCBPs");
+    bool canPatchCBP(const std::vector<std::string> &args) {
+        LOG_F(INFO, "canPatchCBP");
 
-        patchCbp = false;
+        bool patchCbp = false;
 
         if (args.size() >= 2) {
             patchCbp = ga::pathExists(args[1]);
+            if (patchCbp) {
+                in.projectDir = args[1];
+                LOG_F(INFO, "in.projectDir: %s. patchCbp: %d", in.projectDir.c_str(), patchCbp);
+            } else {
+                LOG_F(INFO, "args[1]: %s. patchCbp: %d", args[1].c_str(), patchCbp);
+            }
+        } else {
+            LOG_F(INFO, "args.size() = %lu. patchCbp: %d", args.size(), patchCbp);
         }
 
-        if (!patchCbp) {
-            return false;
-        }
+        return patchCbp;
+    }
+
+    /// @brief gather the parameters for patching the .cbp files to use a SDK.
+    /// @return true if the CBPs should be patched and the parameters have been gathered.
+    bool readConfiguration(const std::string &pwd) {
+        LOG_F(INFO, "preparePatchCBPs");
 
         in = CMakeInput();
         in.configFileNames.insert("cmaker.json");
-        in.projectDir = args[1];
         in.pwd = pwd;
         in.buildDir = pwd;
         if (pwd.empty()) {
@@ -405,7 +409,7 @@ struct CMaker::Impl {
         for (const std::string &configFilePath : configFilePaths) {
             std::ifstream fin(configFilePath);
             if (!fin) {
-                out.errors.insert(configFilePath + " could not be read");
+                LOG_F(ERROR, "%s could not be read", configFilePath.c_str());
                 continue;
             }
 
@@ -414,7 +418,7 @@ struct CMaker::Impl {
 
             nlohmann::json jProjects = jObj["projects"];
             if (!jProjects.is_array()) {
-                out.errors.insert(configFilePath + " does not contain the projects section");
+                LOG_F(ERROR, "%s does not contain the projects section", configFilePath.c_str());
                 continue;
             }
 
@@ -439,7 +443,7 @@ struct CMaker::Impl {
             }
 
             if (!hasProject) {
-                out.errors.insert(configFilePath + " does not contain the project " + in.projectDir);
+                LOG_F(ERROR, "%s does not contain the project %s", configFilePath.c_str(), in.projectDir.c_str());
                 break;
             }
 
@@ -459,10 +463,11 @@ struct CMaker::Impl {
             in.cmdEnvironment = jProject.value("cmdEnvironment", "");
             std::string sdkDirWithS(in.sdkDir + "/");
             for (const auto &kv : jProject["cmdReplacement"].items()) {
+                std::string key = ga::getFilename(kv.key());
                 std::string value = kv.value();
                 replaceAll("${sdkPath}", sdkDirWithS, value);
                 ga::getSimplePath(value, value);
-                in.cmdReplacement[kv.key()] = value;
+                in.cmdReplacement[key] = value;
             }
 
             in.configFilePath = configFilePath;
@@ -480,7 +485,7 @@ struct CMaker::Impl {
         std::string virtualFolderPrefix;
         std::string dir = ga::getParent(filePath);
         if (!ga::getRelativePath(dir, in.sdkDir, virtualFolderPrefix)) {
-            out.errors.insert("cannot get relative path: " + dir + " => " + in.sdkDir);
+            LOG_F(ERROR, "cannot get relative path: %s => %s", dir.c_str(), in.sdkDir.c_str());
             return patchResult;
         }
 
@@ -562,11 +567,8 @@ struct CMaker::Impl {
         inXml.Print(&printerOut);
         std::string modified(printerOut.CStr());
 
-        out.originalFileContent[filePath] = original;
-
         bool isModified = (original != modified);
         if (isModified) {
-            out.modifiedFileContent[filePath] = modified;
             patchResult = PatchResult::Changed;
             if (writeFileCb) {
                 writeFileCb(filePath, modified);
@@ -598,7 +600,7 @@ struct CMaker::Impl {
             tinyxml2::XMLDocument inXml;
             tinyxml2::XMLError error = inXml.LoadFile(filePath.c_str());
             if (error != tinyxml2::XML_SUCCESS) {
-                out.errors.insert(filePath + " cannot be loaded");
+                LOG_F(ERROR, "%s cannot be loaded", filePath.c_str());
                 continue;
             }
 

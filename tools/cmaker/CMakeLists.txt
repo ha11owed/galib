@@ -26,7 +26,6 @@ if(CMAKE_DL_LIBS)
     target_link_libraries(${PROJECT_NAME} ${CMAKE_DL_LIBS})
 endif()
 
-target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
 target_compile_definitions(${PROJECT_NAME} PRIVATE CMAKER_WITH_UNIT_TESTS)
 
 file(COPY "tests/testproject_input.cbp" "tests/testproject_output.cbp.xml" "tests/cmaker.json" DESTINATION ${CMAKE_BINARY_DIR})

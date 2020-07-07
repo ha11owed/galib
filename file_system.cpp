@@ -223,7 +223,8 @@ bool readFile(const std::string &inFile, std::string &outBytes) {
     auto length = file.tellg();
     file.seekg(0, std::ios::beg);
     outBytes.resize(static_cast<size_t>(length));
-    file.read(static_cast<char *>(outBytes.data()), length);
+    // maybe add some compiler check, starting with c++20 the cast is not needed anymore
+    file.read(const_cast<char *>(outBytes.data()), length);
     return true;
 }
 
