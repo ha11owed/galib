@@ -25,6 +25,8 @@ int main(int argc, char **argv) {
 using namespace gatools;
 
 inline void initlog() {
+    loguru::g_stderr_verbosity = loguru::Verbosity_OFF;
+
     time_t rawtime;
     struct tm *timeinfo;
     char buffer[80];
