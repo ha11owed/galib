@@ -49,10 +49,15 @@ int main(int argc, char **argv) {
         cmd[i] = argv[i];
     }
 
+    std::vector<std::string> env;
+    for (int i = 0; environ[i]; i++) {
+        env.push_back(environ[i]);
+    }
+
     CMaker cmaker;
     // cmd = {"cmaker", "/home/alin/projects/cpp-httplib/", "'-GCodeBlocks - Unix Makefiles'"};
     // pwd = "/home/alin/projects/build-cpp-httplib-Desktop-Debug/";
-    int result = cmaker.exec(cmd, pwd);
+    int result = cmaker.exec(cmd, env, pwd);
     return result;
 }
 

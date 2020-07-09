@@ -60,7 +60,10 @@ enum subprocess_option_e {
   subprocess_option_combined_stdout_stderr = 0x1,
 
   // The child process should inherit the environment variables of the parent.
-  subprocess_option_inherit_environment = 0x2
+  subprocess_option_inherit_environment = 0x2,
+
+  // Enable asynchronous reading of stdout/stderr before it has completed.
+  subprocess_option_enable_async = 0x4
 };
 
 #if defined(__cplusplus)
@@ -76,6 +79,21 @@ extern "C" {
 subprocess_weak int subprocess_create(const char *const command_line[],
                                       int options,
                                       struct subprocess_s *const out_process);
+
+/// @brief Create a process.
+/// @param command_line An array of strings for the command line to execute for
+/// this process. The last element must be NULL to signify the end of the array.
+/// @param environment_variables An array of strings containing the environment
+/// variables to be passed to the created process. The last element must be NULL
+/// to signify the end of the array. The parameter will be ignored when
+/// subprocess_option_inherit_environment is contained in the options.
+/// @param options A bit field of subprocess_option_e's to pass.
+/// @param out_process The newly created process.
+/// @return On success 0 is returned.
+subprocess_weak int subprocess_create_ex(const char *const command_line[],
+                                         const char *const environment_variables[],
+                                         int options,
+                                         struct subprocess_s *const out_process);
 
 /// @brief Get the standard input file for a process.
 /// @param process The process to query.
@@ -120,6 +138,7 @@ subprocess_weak int subprocess_join(struct subprocess_s *const process,
 
 /// @brief Destroy a previously created process.
 /// @param process The process to destroy.
+/// @return On success 0 is returned.
 ///
 /// If the process to be destroyed had not finished execution, it may out live
 /// the parent process.
@@ -127,9 +146,45 @@ subprocess_weak int subprocess_destroy(struct subprocess_s *const process);
 
 /// @brief Terminate a previously created process.
 /// @param process The process to terminate.
+/// @return On success 0 is returned.
 ///
-/// If the process to be destroyed had not finished execution, it will be terminated (i.e killed)
+/// If the process to be destroyed had not finished execution, it will be
+/// terminated (i.e killed).
 subprocess_weak int subprocess_terminate(struct subprocess_s *const process);
+
+/// @brief Read the standard output from the child process.
+/// @param process The process to read from.
+/// @param buffer The buffer to read into.
+/// @param size The maximum number of bytes to read.
+/// @return The number of bytes actually read into buffer. Can only be 0 if the
+/// process has complete.
+///
+/// The only safe way to read from the standard output of a process during it's
+/// execution is to use the `subprocess_option_enable_async` option in
+/// conjuction with this method.
+subprocess_weak unsigned
+subprocess_read_stdout(struct subprocess_s *const process, char *const buffer,
+                       unsigned size);
+
+/// @brief Read the standard error from the child process.
+/// @param process The process to read from.
+/// @param buffer The buffer to read into.
+/// @param size The maximum number of bytes to read.
+/// @return The number of bytes actually read into buffer. Can only be 0 if the
+/// process has complete.
+///
+/// The only safe way to read from the standard error of a process during it's
+/// execution is to use the `subprocess_option_enable_async` option in
+/// conjuction with this method.
+subprocess_weak unsigned
+subprocess_read_stderr(struct subprocess_s *const process, char *const buffer,
+                       unsigned size);
+
+#if defined(__cplusplus)
+#define SUBPROCESS_CAST(type, x) static_cast<type>(x)
+#else
+#define SUBPROCESS_CAST(type, x) ((type)x)
+#endif
 
 #if !defined(_MSC_VER)
 #include <stdlib.h>
@@ -141,16 +196,17 @@ subprocess_weak int subprocess_terminate(struct subprocess_s *const process);
 
 #if defined(_MSC_VER)
 #ifdef _WIN64
-typedef __int64 intptr_t;
-typedef unsigned __int64 size_t;
+typedef __int64 subprocess_intptr_t;
+typedef unsigned __int64 subprocess_size_t;
 #else
-typedef int intptr_t;
-typedef unsigned int size_t;
+typedef int subprocess_intptr_t;
+typedef unsigned int subprocess_size_t;
 #endif
 
 typedef struct _PROCESS_INFORMATION *LPPROCESS_INFORMATION;
 typedef struct _SECURITY_ATTRIBUTES *LPSECURITY_ATTRIBUTES;
 typedef struct _STARTUPINFOA *LPSTARTUPINFOA;
+typedef struct _OVERLAPPED *LPOVERLAPPED;
 
 #pragma warning(push, 1)
 struct subprocess_subprocess_information_s {
@@ -186,13 +242,43 @@ struct subprocess_startup_info_s {
   void *hStdOutput;
   void *hStdError;
 };
+
+struct subprocess_overlapped_s {
+  uintptr_t Internal;
+  uintptr_t InternalHigh;
+  union {
+    struct {
+      unsigned long Offset;
+      unsigned long OffsetHigh;
+    } DUMMYSTRUCTNAME;
+    void *Pointer;
+  } DUMMYUNIONNAME;
+
+  void *hEvent;
+};
+
 #pragma warning(pop)
 
+__declspec(dllimport) unsigned long __stdcall GetLastError(void);
 __declspec(dllimport) int __stdcall SetHandleInformation(void *, unsigned long,
                                                          unsigned long);
 __declspec(dllimport) int __stdcall CreatePipe(void **, void **,
                                                LPSECURITY_ATTRIBUTES,
                                                unsigned long);
+__declspec(dllimport) void *__stdcall CreateNamedPipeA(
+    const char *, unsigned long, unsigned long, unsigned long, unsigned long,
+    unsigned long, unsigned long, LPSECURITY_ATTRIBUTES);
+__declspec(dllimport) int __stdcall ReadFile(void *, void *, unsigned long,
+                                             unsigned long *, LPOVERLAPPED);
+__declspec(dllimport) unsigned long __stdcall GetCurrentProcessId(void);
+__declspec(dllimport) unsigned long __stdcall GetCurrentThreadId(void);
+__declspec(dllimport) void *__stdcall CreateFileA(const char *, unsigned long,
+                                                  unsigned long,
+                                                  LPSECURITY_ATTRIBUTES,
+                                                  unsigned long, unsigned long,
+                                                  void *);
+__declspec(dllimport) void *__stdcall CreateEventA(LPSECURITY_ATTRIBUTES, int,
+                                                   int, const char *);
 __declspec(dllimport) int __stdcall CreateProcessA(
     const char *, char *, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, int,
     unsigned long, void *, const char *, LPSTARTUPINFOA, LPPROCESS_INFORMATION);
@@ -203,8 +289,22 @@ __declspec(dllimport) int __stdcall GetExitCodeProcess(
     void *, unsigned long *lpExitCode);
 __declspec(dllimport) int __stdcall TerminateProcess(
   void *, unsigned int);
-__declspec(dllimport) int __cdecl _open_osfhandle(intptr_t, int);
-void *__cdecl _alloca(size_t);
+__declspec(dllimport) unsigned long __stdcall WaitForMultipleObjects(
+    unsigned long, void *const *, int, unsigned long);
+__declspec(dllimport) int __stdcall GetOverlappedResult(void *, LPOVERLAPPED,
+                                                        unsigned long *, int);
+
+#if defined(_DLL) && (_DLL == 1)
+#define SUBPROCESS_DLLIMPORT __declspec(dllimport)
+#else
+#define SUBPROCESS_DLLIMPORT
+#endif
+
+SUBPROCESS_DLLIMPORT int __cdecl _fileno(FILE *);
+SUBPROCESS_DLLIMPORT int __cdecl _open_osfhandle(subprocess_intptr_t, int);
+SUBPROCESS_DLLIMPORT subprocess_intptr_t __cdecl _get_osfhandle(int);
+
+void *__cdecl _alloca(subprocess_size_t);
 #endif
 
 #ifdef __clang__
@@ -219,6 +319,8 @@ struct subprocess_s {
 #if defined(_MSC_VER)
   void *hProcess;
   void *hStdInput;
+  void *hEventOutput;
+  void *hEventError;
 #else
   pid_t child;
 #endif
@@ -227,13 +329,73 @@ struct subprocess_s {
 #pragma clang diagnostic pop
 #endif
 
+#if defined(_MSC_VER)
+subprocess_weak int subprocess_create_named_pipe_helper(void **rd, void **wr);
+int subprocess_create_named_pipe_helper(void **rd, void **wr) {
+  const unsigned long pipeAccessInbound = 0x00000001;
+  const unsigned long fileFlagOverlapped = 0x40000000;
+  const unsigned long pipeTypeByte = 0x00000000;
+  const unsigned long pipeWait = 0x00000000;
+  const unsigned long genericWrite = 0x40000000;
+  const unsigned long openExisting = 3;
+  const unsigned long fileAttributeNormal = 0x00000080;
+  const void *const invalidHandleValue = (void *)~((subprocess_intptr_t)0);
+  struct subprocess_security_attributes_s saAttr = {sizeof(saAttr), 0, 1};
+  char name[256] = {0};
+  __declspec(thread) static long index = 0;
+  const long unique = index++;
+
+#if _MSC_VER < 1900
+#pragma warning(disable : 4996)
+#pragma warning(push, 1)
+
+  _snprintf(name, sizeof(name) - 1,
+            "\\\\.\\pipe\\sheredom_subprocess_h.%08lx.%08lx.%ld",
+            GetCurrentProcessId(), GetCurrentThreadId(), unique);
+
+#pragma warning(pop)
+#else
+#pragma warning(disable : 4710)
+#pragma warning(push, 1)
+  snprintf(name, sizeof(name) - 1,
+           "\\\\.\\pipe\\sheredom_subprocess_h.%08lx.%08lx.%ld",
+           GetCurrentProcessId(), GetCurrentThreadId(), unique);
+#pragma warning(pop)
+#endif
+
+  *rd = CreateNamedPipeA(name, pipeAccessInbound | fileFlagOverlapped,
+                         pipeTypeByte | pipeWait, 1, 4096, 4096, 0,
+                         (LPSECURITY_ATTRIBUTES)&saAttr);
+
+  if (invalidHandleValue == rd) {
+    return -1;
+  }
+
+  *wr = CreateFileA(name, genericWrite, 0, (LPSECURITY_ATTRIBUTES)&saAttr,
+                    openExisting, fileAttributeNormal, 0);
+
+  if (invalidHandleValue == wr) {
+    return -1;
+  }
+
+  return 0;
+}
+#endif
+
 int subprocess_create(const char *const commandLine[], int options,
                       struct subprocess_s *const out_process) {
+    return subprocess_create_ex(commandLine, 0, options, out_process);
+}
+
+int subprocess_create_ex(const char *const commandLine[],
+                         const char *const environmentVariables[],
+                         int options,
+                         struct subprocess_s *const out_process) {
 #if defined(_MSC_VER)
   int fd;
   void *rd, *wr;
   char *commandLineCombined;
-  size_t len;
+  subprocess_size_t len;
   int i, j;
   const unsigned long startFUseStdHandles = 0x00000100;
   const unsigned long handleFlagInherit = 0x00000001;
@@ -259,7 +421,7 @@ int subprocess_create(const char *const commandLine[], int options,
     return -1;
   }
 
-  fd = _open_osfhandle((intptr_t)wr, 0);
+  fd = _open_osfhandle((subprocess_intptr_t)wr, 0);
 
   if (-1 != fd) {
     out_process->stdin_file = _fdopen(fd, "wb");
@@ -271,15 +433,21 @@ int subprocess_create(const char *const commandLine[], int options,
 
   startInfo.hStdInput = rd;
 
-  if (!CreatePipe(&rd, &wr, (LPSECURITY_ATTRIBUTES)&saAttr, 0)) {
-    return -1;
+  if (options & subprocess_option_enable_async) {
+    if (subprocess_create_named_pipe_helper(&rd, &wr)) {
+      return -1;
+    }
+  } else {
+    if (!CreatePipe(&rd, &wr, (LPSECURITY_ATTRIBUTES)&saAttr, 0)) {
+      return -1;
+    }
   }
 
   if (!SetHandleInformation(rd, handleFlagInherit, 0)) {
     return -1;
   }
 
-  fd = _open_osfhandle((intptr_t)rd, 0);
+  fd = _open_osfhandle((subprocess_intptr_t)rd, 0);
 
   if (-1 != fd) {
     out_process->stdout_file = _fdopen(fd, "rb");
@@ -296,15 +464,21 @@ int subprocess_create(const char *const commandLine[], int options,
     out_process->stderr_file = out_process->stdout_file;
     startInfo.hStdError = startInfo.hStdOutput;
   } else {
-    if (!CreatePipe(&rd, &wr, (LPSECURITY_ATTRIBUTES)&saAttr, 0)) {
-      return -1;
+    if (options & subprocess_option_enable_async) {
+      if (subprocess_create_named_pipe_helper(&rd, &wr)) {
+        return -1;
+      }
+    } else {
+      if (!CreatePipe(&rd, &wr, (LPSECURITY_ATTRIBUTES)&saAttr, 0)) {
+        return -1;
+      }
     }
 
     if (!SetHandleInformation(rd, handleFlagInherit, 0)) {
       return -1;
     }
 
-    fd = _open_osfhandle((intptr_t)rd, 0);
+    fd = _open_osfhandle((subprocess_intptr_t)rd, 0);
 
     if (-1 != fd) {
       out_process->stderr_file = _fdopen(fd, "rb");
@@ -315,6 +489,16 @@ int subprocess_create(const char *const commandLine[], int options,
     }
 
     startInfo.hStdError = wr;
+  }
+
+  if (options & subprocess_option_enable_async) {
+    out_process->hEventOutput =
+        CreateEventA((LPSECURITY_ATTRIBUTES)&saAttr, 1, 1, 0);
+    out_process->hEventError =
+        CreateEventA((LPSECURITY_ATTRIBUTES)&saAttr, 1, 1, 0);
+  } else {
+    out_process->hEventOutput = 0;
+    out_process->hEventError = 0;
   }
 
   // Combine commandLine together into a single string
@@ -370,11 +554,11 @@ int subprocess_create(const char *const commandLine[], int options,
   CloseHandle(processInfo.hThread);
 
   if (0 != startInfo.hStdOutput) {
+    CloseHandle(startInfo.hStdOutput);
+
     if (startInfo.hStdError != startInfo.hStdOutput) {
       CloseHandle(startInfo.hStdError);
     }
-
-    CloseHandle(startInfo.hStdOutput);
   }
 
   return 0;
@@ -434,7 +618,11 @@ int subprocess_create(const char *const commandLine[], int options,
     if (subprocess_option_inherit_environment !=
         (options & subprocess_option_inherit_environment)) {
       char *const environment[1] = {0};
-      exit(execve(commandLine[0], (char *const *)commandLine, environment));
+      if (environmentVariables) {
+        exit(execve(commandLine[0], (char *const *)commandLine, (char *const *)environmentVariables));
+      } else {
+        exit(execve(commandLine[0], (char *const *)commandLine, environment));
+      }
     } else {
       exit(execvp(commandLine[0], (char *const *)commandLine));
     }
@@ -537,20 +725,36 @@ int subprocess_join(struct subprocess_s *const process,
 int subprocess_destroy(struct subprocess_s *const process) {
   if (0 != process->stdin_file) {
     fclose(process->stdin_file);
+    process->stdin_file = 0;
   }
 
-  fclose(process->stdout_file);
+  if (0 != process->stdout_file) {
+    fclose(process->stdout_file);
 
-  if (process->stdout_file != process->stderr_file) {
-    fclose(process->stderr_file);
+    if (process->stdout_file != process->stderr_file) {
+      fclose(process->stderr_file);
+    }
+
+    process->stdout_file = 0;
+    process->stderr_file = 0;
   }
 
 #if defined(_MSC_VER)
-  CloseHandle(process->hProcess);
+  if (process->hProcess) {
+    CloseHandle(process->hProcess);
+    process->hProcess = 0;
 
-  if (0 != process->hStdInput) {
-    CloseHandle(process->hStdInput);
-    process->hStdInput = NULL;
+    if (0 != process->hStdInput) {
+      CloseHandle(process->hStdInput);
+    }
+
+    if (0 != process->hEventOutput) {
+      CloseHandle(process->hEventOutput);
+    }
+
+    if (0 != process->hEventError) {
+      CloseHandle(process->hEventError);
+    }
   }
 #endif
 
@@ -574,6 +778,89 @@ int subprocess_terminate(struct subprocess_s *const process) {
 #endif
 }
 
+unsigned subprocess_read_stdout(struct subprocess_s *const process,
+                                char *const buffer, unsigned size) {
+#if defined(_MSC_VER)
+  void *handle;
+  unsigned long bytes_read = 0;
+  struct subprocess_overlapped_s overlapped = {0};
+  overlapped.hEvent = process->hEventOutput;
+
+  handle = (void *)_get_osfhandle(_fileno(process->stdout_file));
+
+  if (!ReadFile(handle, buffer, size, &bytes_read, (LPOVERLAPPED)&overlapped)) {
+    const unsigned long errorIoPending = 997;
+    unsigned long error = GetLastError();
+
+    // Means we've got an async read!
+    if (error == errorIoPending) {
+      if (!GetOverlappedResult(handle, (LPOVERLAPPED)&overlapped, &bytes_read,
+                               1)) {
+        const unsigned long errorIoIncomplete = 996;
+        const unsigned long errorHandleEOF = 38;
+        error = GetLastError();
+
+        if ((error != errorIoIncomplete) && (error != errorHandleEOF)) {
+          return 0;
+        }
+      }
+    }
+  }
+
+  return (unsigned)bytes_read;
+#else
+  const int fd = fileno(process->stdout_file);
+  const ssize_t bytes_read = read(fd, buffer, size);
+
+  if (bytes_read < 0) {
+    return 0;
+  }
+
+  return SUBPROCESS_CAST(unsigned, bytes_read);
+#endif
+}
+
+unsigned subprocess_read_stderr(struct subprocess_s *const process,
+                                char *const buffer, unsigned size) {
+#if defined(_MSC_VER)
+  void *handle;
+  unsigned long bytes_read = 0;
+  struct subprocess_overlapped_s overlapped = {0};
+  overlapped.hEvent = process->hEventError;
+
+  handle = (void *)_get_osfhandle(_fileno(process->stderr_file));
+
+  if (!ReadFile(handle, buffer, size, &bytes_read, (LPOVERLAPPED)&overlapped)) {
+    const unsigned long errorIoPending = 997;
+    unsigned long error = GetLastError();
+
+    // Means we've got an async read!
+    if (error == errorIoPending) {
+      if (!GetOverlappedResult(handle, (LPOVERLAPPED)&overlapped, &bytes_read,
+                               1)) {
+        const unsigned long errorIoIncomplete = 996;
+        const unsigned long errorHandleEOF = 38;
+        error = GetLastError();
+
+        if ((error != errorIoIncomplete) && (error != errorHandleEOF)) {
+          return 0;
+        }
+      }
+    }
+  }
+
+  return (unsigned)bytes_read;
+#else
+  const int fd = fileno(process->stderr_file);
+  const ssize_t bytes_read = read(fd, buffer, size);
+
+  if (bytes_read < 0) {
+    return 0;
+  }
+
+  return SUBPROCESS_CAST(unsigned, bytes_read);
+#endif
+}
 
 #if defined(__cplusplus)
 } // extern "C"

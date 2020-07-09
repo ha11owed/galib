@@ -19,6 +19,9 @@ struct Process::Impl {
     std::vector<std::string> _cmdLines;
     std::vector<const char *> _cmdLinesRaw;
 
+    std::vector<std::string> _env;
+    std::vector<const char *> _envRaw;
+
     std::deque<std::string> _writeLines;
     std::deque<std::string> _readLines;
 
@@ -30,29 +33,28 @@ struct Process::Impl {
 
     OnReadLine _onReadLine;
 
-    Impl(const std::vector<std::string> &cmdLines, OnReadLine onReadLine) {
-        setOnReadLine(onReadLine);
-        create(cmdLines);
+    Impl(const std::vector<std::string> &cmdLines, const std::vector<std::string> &env, OnReadLine onReadLine) {
+        if (onReadLine) {
+            setOnReadLine(onReadLine);
+        }
+        create(cmdLines, env);
     }
-    Impl(const std::vector<std::string> &cmdLines) { create(cmdLines); }
+
     Impl() {}
     ~Impl() { kill(); }
 
-    bool create(const std::vector<std::string> &cmdLines) {
+    bool create(const std::vector<std::string> &cmdLines, const std::vector<std::string> &env) {
         std::lock_guard<std::mutex> g(_mutex);
         if (_isRunning) {
             return false;
         }
 
-        _cmdLines = cmdLines;
-        _cmdLinesRaw.resize(_cmdLines.size() + 1);
-        for (size_t i = 0; i < _cmdLines.size(); i++) {
-            _cmdLinesRaw[i] = _cmdLines[i].c_str();
-        }
-        _cmdLinesRaw[_cmdLines.size()] = nullptr;
+        vecToRaw(cmdLines, _cmdLines, _cmdLinesRaw);
+        vecToRaw(env, _env, _envRaw);
 
-        int options = subprocess_option_inherit_environment | subprocess_option_combined_stdout_stderr;
-        int r = subprocess_create(_cmdLinesRaw.data(), options, &_sp);
+        int options = subprocess_option_inherit_environment | subprocess_option_combined_stdout_stderr |
+                      subprocess_option_enable_async;
+        int r = subprocess_create_ex(_cmdLinesRaw.data(), _envRaw.data(), options, &_sp);
         _isRunning = (r == 0);
         if (!_isRunning) {
             return false;
@@ -109,6 +111,16 @@ struct Process::Impl {
         });
 
         return _isRunning;
+    }
+
+    static void vecToRaw(const std::vector<std::string> &in, std::vector<std::string> &out,
+                         std::vector<const char *> &outRaw) {
+        out = in;
+        outRaw.resize(out.size() + 1);
+        for (size_t i = 0; i < out.size(); i++) {
+            outRaw[i] = out[i].c_str();
+        }
+        outRaw[out.size()] = nullptr;
     }
 
     bool writeToStdin(const std::string &line) {
@@ -262,10 +274,13 @@ Process::Process()
     : _impl(std::make_shared<Impl>()) {}
 
 Process::Process(const std::vector<std::string> &cmd)
-    : _impl(std::make_shared<Impl>(cmd)) {}
+    : _impl(std::make_shared<Impl>(cmd, std::vector<std::string>(), nullptr)) {}
 
 Process::Process(const std::vector<std::string> &cmd, OnReadLine onReadLine)
-    : _impl(std::make_shared<Impl>(cmd, onReadLine)) {}
+    : _impl(std::make_shared<Impl>(cmd, std::vector<std::string>(), onReadLine)) {}
+
+Process::Process(const std::vector<std::string> &cmd, const std::vector<std::string> &env, OnReadLine onReadLine)
+    : _impl(std::make_shared<Impl>(cmd, env, onReadLine)) {}
 
 Process::~Process() {}
 

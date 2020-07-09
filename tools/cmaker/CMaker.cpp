@@ -38,7 +38,7 @@ struct CMaker::Impl {
         std::set<std::string> gccClangFixes;
         bool overrideFiles = true;
         bool outputToStdout = true;
-        std::string cmdEnvironment;
+        std::set<std::string> cmdEnvironment;
         std::map<std::string, std::string> cmdReplacement;
 
         void log() const {
@@ -277,19 +277,22 @@ struct CMaker::Impl {
 
         std::vector<std::pair<std::string, int>> searches;
         searches.emplace_back(std::make_pair(in.projectDir, 3));
-        searches.emplace_back(std::make_pair(in.buildDir, 2));
+        searches.emplace_back(std::make_pair(in.buildDir, 3));
 
         for (const auto &kv : searches) {
             std::string searchDir = kv.first;
+            if (searchDir.empty()) {
+                continue;
+            }
+
             for (int i = 0; i < kv.second; i++) {
                 auto it = searchDirsSet.find(searchDir);
                 if (it != searchDirsSet.end()) {
                     break;
                 }
-                if (!ga::pathExists(searchDir)) {
-                    break;
+                if (ga::pathExists(searchDir)) {
+                    searchDirs.push_back(searchDir);
                 }
-                searchDirs.push_back(searchDir);
                 searchDir = ga::getParent(searchDir);
             }
         }
@@ -309,30 +312,43 @@ struct CMaker::Impl {
         return dir;
     }
 
-    int exec(const std::vector<std::string> &args, const std::string &pwd) {
+    int exec(const std::vector<std::string> &args, const std::vector<std::string> &env, const std::string &pwd) {
         // Log the input parameters
         LOG_F(INFO, "exec");
         for (size_t i = 0; i < args.size(); i++) {
             LOG_F(INFO, "exec arg[%lu]: %s", i, args[i].c_str());
         }
+        for (size_t i = 0; i < env.size(); i++) {
+            LOG_F(INFO, "exec env[%lu]: %s", i, env[i].c_str());
+        }
         LOG_F(INFO, "exec pwd: %s", pwd.c_str());
 
-        bool hasConfig = readConfiguration(pwd);
-        LOG_F(INFO, "exec hasConfig: %d", hasConfig);
+        in = CMakeInput();
         bool patchCbp = canPatchCBP(args);
         LOG_F(INFO, "exec patchCbp: %d", patchCbp);
+        bool hasConfig = readConfiguration(pwd);
+        LOG_F(INFO, "exec hasConfig: %d", hasConfig);
 
         int retCode = -1;
         if (args.size() == 0) {
             LOG_F(ERROR, "exec empty args");
         } else {
             auto replIt = in.cmdReplacement.find(args[0]);
+            if (replIt == in.cmdReplacement.end()) {
+                replIt = in.cmdReplacement.find(ga::getFilename(args[0]));
+            }
             if (replIt != in.cmdReplacement.end()) {
                 LOG_F(INFO, "exec cmdReplacement: %s", replIt->second.c_str());
                 std::vector<std::string> argsR(args);
                 argsR[0] = replIt->second;
 
-                retCode = execCMake(argsR);
+                std::vector<std::string> envR(env);
+                for (const std::string &v : in.cmdEnvironment) {
+                    LOG_F(INFO, "exec env: %s", v.c_str());
+                    envR.push_back(v);
+                }
+
+                retCode = execCMake(argsR, envR);
             } else {
                 LOG_F(ERROR, "exec cmdReplacement for: %s does not exist", args[0].c_str());
             }
@@ -375,7 +391,6 @@ struct CMaker::Impl {
     bool readConfiguration(const std::string &pwd) {
         LOG_F(INFO, "preparePatchCBPs");
 
-        in = CMakeInput();
         in.configFileNames.insert("cmaker.json");
         in.pwd = pwd;
         in.buildDir = pwd;
@@ -403,6 +418,12 @@ struct CMaker::Impl {
 
             if (!configFilePaths.empty()) {
                 break;
+            }
+        }
+
+        if (configFilePaths.empty()) {
+            for (const std::string &searchDir : searchDirs) {
+                LOG_F(INFO, "searchDir: %s", searchDir.c_str());
             }
         }
 
@@ -448,9 +469,13 @@ struct CMaker::Impl {
             }
 
             in.sdkDir = jProject["sdkPath"];
+
+            in.gccClangFixes.clear();
             for (const auto &kv : jProject["gccClangFixes"].items()) {
                 in.gccClangFixes.insert(kv.value().get<std::string>());
             }
+
+            in.extraAddDirectory.clear();
             for (const auto &kv : jProject["extraAddDirectory"].items()) {
                 in.extraAddDirectory.push_back(kv.value().get<std::string>());
             }
@@ -460,14 +485,23 @@ struct CMaker::Impl {
             in.outputToStdout = jProject.value("outputToStdout", true);
 
             // CMD
-            in.cmdEnvironment = jProject.value("cmdEnvironment", "");
+            in.cmdEnvironment.clear();
+            for (const auto &v : jProject["cmdEnvironment"]) {
+                in.cmdEnvironment.insert(v.get<std::string>());
+            }
+
+            in.cmdReplacement.clear();
             std::string sdkDirWithS(in.sdkDir + "/");
             for (const auto &kv : jProject["cmdReplacement"].items()) {
-                std::string key = ga::getFilename(kv.key());
                 std::string value = kv.value();
                 replaceAll("${sdkPath}", sdkDirWithS, value);
                 ga::getSimplePath(value, value);
-                in.cmdReplacement[key] = value;
+
+                in.cmdReplacement[kv.key()] = value;
+                std::string smallKey = ga::getFilename(kv.key());
+                if (in.cmdReplacement.find(smallKey) == in.cmdReplacement.end()) {
+                    in.cmdReplacement[smallKey] = value;
+                }
             }
 
             in.configFilePath = configFilePath;
@@ -614,8 +648,13 @@ struct CMaker::Impl {
             switch (patchResult) {
             case PatchResult::Changed:
                 if (in.overrideFiles && !writeFileCb) {
-                    std::string outFile = filePath + ".txt";
+                    std::string outFile = filePath + ".tmp";
+                    std::string bakFile = filePath + ".bak";
                     inXml.SaveFile(outFile.c_str());
+                    if (!ga::pathExists(bakFile)) {
+                        std::rename(filePath.c_str(), bakFile.c_str());
+                    }
+                    std::rename(outFile.c_str(), filePath.c_str());
                 }
                 break;
             case PatchResult::Unchanged:
@@ -634,7 +673,7 @@ struct CMaker::Impl {
         }
     }
 
-    int execCMake(const std::vector<std::string> &args) {
+    int execCMake(const std::vector<std::string> &args, const std::vector<std::string> &env) {
         if (args.empty()) {
             return -1;
         }
@@ -660,7 +699,7 @@ struct CMaker::Impl {
 
         std::cout << "cmake..." << std::endl;
 
-        ga::Process p(cmd);
+        ga::Process p(cmd, env, nullptr);
         for (const std::string &line : lines) {
             std::cout << line << std::endl;
             p.writeLine(line);
@@ -690,10 +729,10 @@ std::string CMaker::getModuleDir() const {
     return r;
 }
 
-int CMaker::exec(const std::vector<std::string> &args, const std::string &pwd) {
+int CMaker::exec(const std::vector<std::string> &args, const std::vector<std::string> &env, const std::string &pwd) {
     int r = -1;
     if (_impl) {
-        r = _impl->exec(args, pwd);
+        r = _impl->exec(args, env, pwd);
     }
     return r;
 }

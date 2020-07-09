@@ -19,6 +19,7 @@ class Process {
     Process();
     Process(const std::vector<std::string> &cmd);
     Process(const std::vector<std::string> &cmd, OnReadLine onReadLine);
+    Process(const std::vector<std::string> &cmd, const std::vector<std::string> &env, OnReadLine onReadLine);
     virtual ~Process();
 
     /// @brief Each call to write line will clear the buffer with the read lines.
