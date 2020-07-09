@@ -52,8 +52,10 @@ struct Process::Impl {
         vecToRaw(cmdLines, _cmdLines, _cmdLinesRaw);
         vecToRaw(env, _env, _envRaw);
 
-        int options = subprocess_option_inherit_environment | subprocess_option_combined_stdout_stderr |
-                      subprocess_option_enable_async;
+        int options = subprocess_option_combined_stdout_stderr | subprocess_option_enable_async;
+        if (env.empty()) {
+            options |= subprocess_option_inherit_environment;
+        }
         int r = subprocess_create_ex(_cmdLinesRaw.data(), _envRaw.data(), options, &_sp);
         _isRunning = (r == 0);
         if (!_isRunning) {

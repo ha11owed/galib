@@ -17,6 +17,7 @@ int main(int argc, char **argv) {
 
 #include "CMaker.h"
 #include "loguru.hpp"
+#include <pwd.h>
 #include <string>
 #include <unistd.h>
 #include <vector>
@@ -43,8 +44,10 @@ inline void initlog() {
 int main(int argc, char **argv) {
     initlog();
 
-    std::vector<std::string> cmd(argc);
     std::string pwd;
+    std::string home;
+
+    std::vector<std::string> cmd(argc);
     for (int i = 0; i < argc; i++) {
         cmd[i] = argv[i];
     }
@@ -54,10 +57,15 @@ int main(int argc, char **argv) {
         env.push_back(environ[i]);
     }
 
+    passwd *mypasswd = getpwuid(getuid());
+    if (mypasswd && mypasswd->pw_dir) {
+        home = mypasswd->pw_dir;
+    }
+
     CMaker cmaker;
     // cmd = {"cmaker", "/home/alin/projects/cpp-httplib/", "'-GCodeBlocks - Unix Makefiles'"};
     // pwd = "/home/alin/projects/build-cpp-httplib-Desktop-Debug/";
-    int result = cmaker.exec(cmd, env, pwd);
+    int result = cmaker.exec(cmd, env, home, pwd);
     return result;
 }
 

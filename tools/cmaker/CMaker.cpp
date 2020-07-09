@@ -27,6 +27,7 @@ struct CMaker::Impl {
         std::string configFilePath;
         std::set<std::string> configFileNames;
 
+        std::string home;
         std::string pwd;
         std::string projectDir;
         std::string buildDir;
@@ -275,6 +276,11 @@ struct CMaker::Impl {
         std::set<std::string> searchDirsSet;
         std::vector<std::string> searchDirs;
 
+        if (!in.home.empty()) {
+            searchDirsSet.insert(in.home);
+            searchDirs.push_back(in.home);
+        }
+
         std::vector<std::pair<std::string, int>> searches;
         searches.emplace_back(std::make_pair(in.projectDir, 3));
         searches.emplace_back(std::make_pair(in.buildDir, 3));
@@ -312,7 +318,8 @@ struct CMaker::Impl {
         return dir;
     }
 
-    int exec(const std::vector<std::string> &args, const std::vector<std::string> &env, const std::string &pwd) {
+    int exec(const std::vector<std::string> &args, const std::vector<std::string> &env, const std::string &home,
+             const std::string &pwd) {
         // Log the input parameters
         LOG_F(INFO, "exec");
         for (size_t i = 0; i < args.size(); i++) {
@@ -326,7 +333,7 @@ struct CMaker::Impl {
         in = CMakeInput();
         bool patchCbp = canPatchCBP(args);
         LOG_F(INFO, "exec patchCbp: %d", patchCbp);
-        bool hasConfig = readConfiguration(pwd);
+        bool hasConfig = readConfiguration(home, pwd);
         LOG_F(INFO, "exec hasConfig: %d", hasConfig);
 
         int retCode = -1;
@@ -388,10 +395,11 @@ struct CMaker::Impl {
 
     /// @brief gather the parameters for patching the .cbp files to use a SDK.
     /// @return true if the CBPs should be patched and the parameters have been gathered.
-    bool readConfiguration(const std::string &pwd) {
+    bool readConfiguration(const std::string &home, const std::string &pwd) {
         LOG_F(INFO, "preparePatchCBPs");
 
         in.configFileNames.insert("cmaker.json");
+        in.home = home;
         in.pwd = pwd;
         in.buildDir = pwd;
         if (pwd.empty()) {
@@ -729,10 +737,11 @@ std::string CMaker::getModuleDir() const {
     return r;
 }
 
-int CMaker::exec(const std::vector<std::string> &args, const std::vector<std::string> &env, const std::string &pwd) {
+int CMaker::exec(const std::vector<std::string> &args, const std::vector<std::string> &env, const std::string &home,
+                 const std::string &pwd) {
     int r = -1;
     if (_impl) {
-        r = _impl->exec(args, env, pwd);
+        r = _impl->exec(args, env, home, pwd);
     }
     return r;
 }
