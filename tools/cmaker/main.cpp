@@ -59,9 +59,21 @@ int main(int argc, char **argv) {
         env.push_back(environ[i]);
     }
 
-    passwd *mypasswd = getpwuid(getuid());
-    if (mypasswd && mypasswd->pw_dir) {
-        home = mypasswd->pw_dir;
+    // Home dir
+    {
+        passwd *mypasswd = getpwuid(getuid());
+        if (mypasswd && mypasswd->pw_dir) {
+            home = mypasswd->pw_dir;
+        }
+    }
+
+    // PWD
+    {
+        char buff[FILENAME_MAX];
+        const char *p = getcwd(buff, FILENAME_MAX);
+        if (p) {
+            pwd = p;
+        }
     }
 
     CMaker cmaker;

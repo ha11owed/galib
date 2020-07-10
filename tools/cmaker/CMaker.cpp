@@ -28,7 +28,6 @@ struct CMaker::Impl {
         std::set<std::string> configFileNames;
 
         std::string home;
-        std::string pwd;
         std::string projectDir;
         std::string buildDir;
         std::string sdkDir;
@@ -45,7 +44,6 @@ struct CMaker::Impl {
         void log() const {
             LOG_F(INFO, "CMakeInput {");
             LOG_F(INFO, "  configFilePath: %s", configFilePath.c_str());
-            LOG_IF_F(INFO, !pwd.empty(), "  pwd: %s", pwd.c_str());
             LOG_F(INFO, "  projectDir: %s", projectDir.c_str());
             LOG_F(INFO, "  buildDir:   %s", buildDir.c_str());
             LOG_F(INFO, "  sdkDir:     %s", sdkDir.c_str());
@@ -355,7 +353,7 @@ struct CMaker::Impl {
                     envR.push_back(v);
                 }
 
-                retCode = execCMake(argsR, envR);
+                retCode = execOriginalCommand(argsR, envR);
             } else {
                 LOG_F(ERROR, "exec cmdReplacement for: %s does not exist", args[0].c_str());
             }
@@ -400,12 +398,7 @@ struct CMaker::Impl {
 
         in.configFileNames.insert("cmaker.json");
         in.home = home;
-        in.pwd = pwd;
         in.buildDir = pwd;
-        if (pwd.empty()) {
-            in.pwd = getModuleDir();
-            in.buildDir = in.pwd;
-        }
 
         ga::DirectorySearch ds;
         ds.maxRecursionLevel = 0;
@@ -681,44 +674,18 @@ struct CMaker::Impl {
         }
     }
 
-    int execCMake(const std::vector<std::string> &args, const std::vector<std::string> &env) {
-        if (args.empty()) {
+    int execOriginalCommand(const std::vector<std::string> &cmd, const std::vector<std::string> &env) {
+        if (cmd.empty()) {
+            LOG_F(ERROR, "cmd is empty");
             return -1;
         }
 
-        std::vector<std::string> cmd;
-        std::vector<std::string> lines;
-        if (in.pwd.empty()) {
-            cmd = args;
-            cmd[0] = "cmake";
-        } else {
-            cmd = {"/bin/bash"};
-
-            std::string cdCmd = "cd " + in.pwd;
-            std::string cmakeCmd = "cmake";
-            for (size_t i = 1; i < args.size(); i++) {
-                cmakeCmd += " ";
-                cmakeCmd += args[i];
-            }
-
-            lines.push_back(cdCmd);
-            lines.push_back(cmakeCmd);
-        }
-
-        std::cout << "cmake..." << std::endl;
-
+        LOG_F(INFO, "%s", cmd[0].c_str());
         ga::Process p(cmd, env, nullptr);
-        for (const std::string &line : lines) {
-            std::cout << line << std::endl;
-            p.writeLine(line);
-            for (const std::string &line : p.readLines(5)) {
-                std::cout << line << std::endl;
-            }
-        }
 
         int result = p.join();
         for (const std::string &line : p.readLines(0)) {
-            std::cout << line << std::endl;
+            LOG_F(INFO, "out: %s", line.c_str());
         }
         return result;
     }
@@ -767,7 +734,6 @@ class CMakerTest : public ::testing::Test {
 
         impl = cmaker._impl;
         impl->in.projectDir = "/home/testuser/project";
-        impl->in.pwd = impl->in.projectDir;
         impl->in.buildDir = "/home/testuser/build-proj";
         impl->in.sdkDir = "/home/testuser/sdks/v42";
         impl->in.outputToStdout = false;
