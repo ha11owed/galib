@@ -16,6 +16,7 @@ int main(int argc, char **argv) {
 #else
 
 #include "CMaker.h"
+#include "file_system.h"
 #include "loguru.hpp"
 #include <pwd.h>
 #include <string>
@@ -24,7 +25,7 @@ int main(int argc, char **argv) {
 
 using namespace gatools;
 
-inline void initlog() {
+inline void initlog(int argc, char **argv) {
     loguru::g_stderr_verbosity = loguru::Verbosity_OFF;
 
     time_t rawtime;
@@ -38,13 +39,21 @@ inline void initlog() {
 
     std::string logFilePath("/tmp/cmaker/cmaker_");
     logFilePath += buffer;
+    if (argc >= 1) {
+        std::string fileName = ga::getFilename(argv[0]);
+        if (!fileName.empty()) {
+            logFilePath += "_";
+            logFilePath += fileName;
+        }
+    }
+    logFilePath += "_";
     logFilePath += std::to_string(getpid());
     logFilePath += ".log";
     loguru::add_file(logFilePath.c_str(), loguru::Append, loguru::Verbosity_MAX);
 }
 
 int main(int argc, char **argv) {
-    initlog();
+    initlog(argc, argv);
 
     std::string pwd;
     std::string home;

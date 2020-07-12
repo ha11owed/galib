@@ -25,7 +25,6 @@ struct CMaker::Impl {
 
     struct CMakeInput {
         std::string configFilePath;
-        std::set<std::string> configFileNames;
 
         std::string home;
         std::string projectDir;
@@ -269,17 +268,13 @@ struct CMaker::Impl {
         }
     }
 
-    /// @brief get a vector of the directories that should be used for searching in the order of search priority
-    std::vector<std::string> getConfigSearchDirs() const {
-        std::set<std::string> searchDirsSet;
-        std::vector<std::string> searchDirs;
-
-        if (!in.home.empty()) {
-            searchDirsSet.insert(in.home);
-            searchDirs.push_back(in.home);
-        }
+    /// @brief get a vector of the config files found in the order of search priority
+    std::vector<std::string> getConfigFilePaths() const {
+        std::vector<std::string> configFilePaths;
+        std::set<std::string> configFilePathSet;
 
         std::vector<std::pair<std::string, int>> searches;
+        searches.emplace_back(std::make_pair(in.home, 1));
         searches.emplace_back(std::make_pair(in.projectDir, 3));
         searches.emplace_back(std::make_pair(in.buildDir, 3));
 
@@ -290,18 +285,20 @@ struct CMaker::Impl {
             }
 
             for (int i = 0; i < kv.second; i++) {
-                auto it = searchDirsSet.find(searchDir);
-                if (it != searchDirsSet.end()) {
-                    break;
+                std::string filePath = ga::combine(searchDir, "cmaker.json");
+
+                auto it = configFilePathSet.find(filePath);
+                if (it == configFilePathSet.end()) {
+                    if (ga::pathExists(filePath)) {
+                        configFilePaths.push_back(filePath);
+                    }
                 }
-                if (ga::pathExists(searchDir)) {
-                    searchDirs.push_back(searchDir);
-                }
+
                 searchDir = ga::getParent(searchDir);
             }
         }
 
-        return searchDirs;
+        return configFilePaths;
     }
 
     std::string getModuleDir() const {
@@ -377,7 +374,7 @@ struct CMaker::Impl {
         bool patchCbp = false;
 
         if (args.size() >= 2) {
-            patchCbp = ga::pathExists(args[1]);
+            patchCbp = (ga::getFilename(args[0]).find("make") != std::string::npos) && ga::pathExists(args[1]);
             if (patchCbp) {
                 in.projectDir = args[1];
                 LOG_F(INFO, "in.projectDir: %s. patchCbp: %d", in.projectDir.c_str(), patchCbp);
@@ -396,7 +393,6 @@ struct CMaker::Impl {
     bool readConfiguration(const std::string &home, const std::string &pwd) {
         LOG_F(INFO, "preparePatchCBPs");
 
-        in.configFileNames.insert("cmaker.json");
         in.home = home;
         in.buildDir = pwd;
 
@@ -405,27 +401,9 @@ struct CMaker::Impl {
         ds.includeFiles = true;
         ds.includeDirectories = false;
 
-        std::set<std::string> configFilePaths;
-        std::vector<std::string> searchDirs = getConfigSearchDirs();
-        for (const std::string &searchDir : searchDirs) {
-            ga::findInDirectory(
-                searchDir,
-                [this, &configFilePaths](const ga::ChildEntry &entry) {
-                    if (in.configFileNames.find(entry.name) != in.configFileNames.end()) {
-                        configFilePaths.insert(entry.path);
-                    }
-                },
-                ds);
-
-            if (!configFilePaths.empty()) {
-                break;
-            }
-        }
-
-        if (configFilePaths.empty()) {
-            for (const std::string &searchDir : searchDirs) {
-                LOG_F(INFO, "searchDir: %s", searchDir.c_str());
-            }
+        std::vector<std::string> configFilePaths = getConfigFilePaths();
+        for (const std::string &configFilePath : configFilePaths) {
+            LOG_F(INFO, "configFilePath: %s", configFilePath.c_str());
         }
 
         for (const std::string &configFilePath : configFilePaths) {
@@ -684,7 +662,13 @@ struct CMaker::Impl {
         ga::Process p(cmd, env, nullptr);
 
         int result = p.join();
-        for (const std::string &line : p.readLines(0)) {
+        LOG_F(INFO, "join: %d", result);
+
+        for (const std::string &line : p.readStderrLines(0)) {
+            LOG_F(INFO, "err: %s", line.c_str());
+            std::cerr << line << std::endl;
+        }
+        for (const std::string &line : p.readStdoutLines(0)) {
             LOG_F(INFO, "out: %s", line.c_str());
         }
         return result;
@@ -780,5 +764,10 @@ TEST_F(CMakerTest, PatchCBPs) {
 
     ASSERT_EQ(CMaker::Impl::PatchResult::Unchanged, patchResult);
     ASSERT_EQ(1, cbpPathAndContents.size());
+}
+
+TEST_F(CMakerTest, ECHO) {
+    int r = cmaker.exec({"xecho", "test"}, {}, cmaker.getModuleDir(), cmaker.getModuleDir());
+    ASSERT_EQ(0, r);
 }
 #endif

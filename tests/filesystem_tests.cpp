@@ -83,6 +83,13 @@ TEST(FileSystemTest, split) {
     ASSERT_EQ(expected, actual);
 }
 
+TEST(FileSystemTest, fileName) {
+    ASSERT_EQ("file.txt", getFilename("/d1/file.txt"));
+    ASSERT_EQ("", getFilename("/d1/d2/"));
+    ASSERT_EQ("file.txt", getFilename("C:\\d1\\file.txt"));
+    ASSERT_EQ("", getFilename("C:\\d1\\d2\\"));
+}
+
 TEST(FileSystemTest, parentPath) {
     ASSERT_EQ("/d1/", getParent("/d1/file.txt"));
     ASSERT_EQ("/d1/", getParent("/d1/d2/"));

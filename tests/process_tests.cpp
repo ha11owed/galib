@@ -25,7 +25,7 @@ class ProcessTest : public ::testing::Test {
         // Process p(cmd, [](const auto &_l) { std::cout << "| " << _l << std::endl; });
         Process p(cmd);
         Output out;
-        out.outputLines = p.readLines(input.empty() ? timeoutMs : input[0].timeoutMs);
+        out.outputLines = p.readStdoutLines(input.empty() ? timeoutMs : input[0].timeoutMs);
         if (output != nullptr) {
             output->push_back(out);
         }
@@ -33,7 +33,7 @@ class ProcessTest : public ::testing::Test {
         for (const InputLine &inputLine : input) {
             p.writeLine(inputLine.text);
             out.inputLine = inputLine.text;
-            out.outputLines = p.readLines(inputLine.timeoutMs);
+            out.outputLines = p.readStdoutLines(inputLine.timeoutMs);
 
             if (output != nullptr) {
                 output->push_back(out);
@@ -110,6 +110,6 @@ TEST_F(ProcessTest, EXIT_JOIN) {
     std::vector<std::string> cmd{"bash"};
     Process p(cmd);
     p.writeLine("sleep 0");
-    p.writeLine("exit 123");
-    ASSERT_EQ(123, p.join());
+    p.writeLine("exit 3");
+    ASSERT_EQ(3, p.join());
 }

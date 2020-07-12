@@ -25,3 +25,5 @@ target_link_libraries(${PROJECT_NAME}
     -pthread
     #X11
     -lstdc++fs -static-libgcc -static-libstdc++)
+
+#set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --save-temps")

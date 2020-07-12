@@ -28,7 +28,12 @@ class Process {
     /// @brief Read all the lines that are in the output stream.
     /// calling this method will also clear the buffer,
     /// meaning that the next call will not contain lines that have already been read.
-    std::vector<std::string> readLines(int timeoutMs = 0);
+    std::vector<std::string> readStdoutLines(int timeoutMs = 0);
+
+    /// @brief Read all the lines that are in the output stream.
+    /// calling this method will also clear the buffer,
+    /// meaning that the next call will not contain lines that have already been read.
+    std::vector<std::string> readStderrLines(int timeoutMs = 0);
 
     /// @brief Returns true if the process is still running.
     bool isRunning();

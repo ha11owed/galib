@@ -273,9 +273,8 @@ std::string getFilename(const std::string &filePath) {
     size_t n = filePath.size();
     if (n > 0) {
         for (size_t i = n - 1; i != 0; i--) {
-            char ch = filePath[i];
-            if (isPathSeparator(ch)) {
-                return filePath.substr(i);
+            if (isPathSeparator(filePath[i])) {
+                return filePath.substr(i + 1);
             }
         }
     }

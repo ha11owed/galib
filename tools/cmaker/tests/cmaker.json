@@ -5,7 +5,10 @@
             "sdkPath": "/home/alin/sdks5/curr/",
             "overrideFiles": false,
             "cmdEnvironment": [],
-            "cmdReplacement": { "mcmake": "${sdkPath}usr/bin/cmake" }
+            "cmdReplacement": {
+                "xcmake": "${sdkPath}usr/bin/cmake",
+                "xecho": "/usr/bin/echo"
+            }
         }
     ]
 }

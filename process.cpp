@@ -14,6 +14,97 @@ namespace {
 namespace ga {
 
 struct Process::Impl {
+
+    struct Reader {
+        using OnReadLine = Process::OnReadLine;
+        using SubprocessRead = std::function<unsigned(struct subprocess_s *const, char *const, unsigned)>;
+        using SetRunningFalse = std::function<void()>;
+
+        std::deque<std::string> _readLines;
+        std::thread _readThread;
+        std::mutex _mutex;
+        subprocess_s *_spPtr = nullptr;
+        OnReadLine _onReadLine = nullptr;
+        SetRunningFalse _setRunningFalse = nullptr;
+        SubprocessRead _subprocessRead = nullptr;
+
+        void popReadLines(std::vector<std::string> &out) {
+            std::lock_guard<std::mutex> g(_mutex);
+
+            out.clear();
+            out.assign(_readLines.begin(), _readLines.end());
+            _readLines.clear();
+        }
+
+        void pushReadLine(const std::string &line) {
+            std::lock_guard<std::mutex> g(_mutex);
+            _readLines.push_back(line);
+
+            if (_onReadLine) {
+                _onReadLine(line);
+            }
+        }
+
+        void setOnReadLine(OnReadLine onReadLine) {
+            std::lock_guard<std::mutex> g(_mutex);
+            _onReadLine = onReadLine;
+        }
+
+        int readFromStdout() {
+            char buffer[1];
+            unsigned n = _subprocessRead(_spPtr, buffer, 1);
+            if (n == 0) {
+                return EOF;
+            }
+
+            return buffer[0];
+        }
+
+        void init(subprocess_s *spPtr, SetRunningFalse setRunningFalse, SubprocessRead cb) {
+            _spPtr = spPtr;
+            _setRunningFalse = setRunningFalse;
+            _subprocessRead = cb;
+            _readThread = std::thread([this]() {
+                std::string line;
+
+                int prevCh = 0;
+                while (true) {
+                    int ch = readFromStdout();
+                    if (ch == EOF) {
+                        _setRunningFalse();
+                        break;
+                    }
+
+                    if (ch == '\r') {
+                        // do nothing \r\n will be treated as new line
+                    } else if (ch == '\n') {
+                        pushReadLine(line);
+                        line.clear();
+                    } else {
+                        if (prevCh == '\r') {
+                            line += '\r';
+                        }
+                        line += static_cast<char>(ch);
+                    }
+
+                    prevCh = ch;
+                }
+
+                // flush any partially read line
+                if (!line.empty()) {
+                    pushReadLine(line);
+                    line.clear();
+                }
+            });
+        }
+
+        void join() {
+            if (_readThread.joinable()) {
+                _readThread.join();
+            }
+        }
+    };
+
     subprocess_s _sp;
 
     std::vector<std::string> _cmdLines;
@@ -23,19 +114,19 @@ struct Process::Impl {
     std::vector<const char *> _envRaw;
 
     std::deque<std::string> _writeLines;
-    std::deque<std::string> _readLines;
-
     std::thread _writeThread;
-    std::thread _readThread;
 
     std::mutex _mutex;
     bool _isRunning = false;
+    int _returnCode = -1;
 
-    OnReadLine _onReadLine;
+    Reader outReader;
+    Reader errReader;
 
     Impl(const std::vector<std::string> &cmdLines, const std::vector<std::string> &env, OnReadLine onReadLine) {
         if (onReadLine) {
-            setOnReadLine(onReadLine);
+            outReader.setOnReadLine(onReadLine);
+            errReader.setOnReadLine(onReadLine);
         }
         create(cmdLines, env);
     }
@@ -52,7 +143,7 @@ struct Process::Impl {
         vecToRaw(cmdLines, _cmdLines, _cmdLinesRaw);
         vecToRaw(env, _env, _envRaw);
 
-        int options = subprocess_option_combined_stdout_stderr | subprocess_option_enable_async;
+        int options = subprocess_option_enable_async;
         if (env.empty()) {
             options |= subprocess_option_inherit_environment;
         }
@@ -80,37 +171,10 @@ struct Process::Impl {
             }
         });
 
-        _readThread = std::thread([this]() {
-            std::string line;
-
-            int prevCh = 0;
-            while (true) {
-                int ch = readFromStdout();
-                if (ch == EOF) {
-                    break;
-                }
-
-                if (ch == '\r') {
-                    // do nothing \r\n will be treated as new line
-                } else if (ch == '\n') {
-                    pushReadLine(line);
-                    line.clear();
-                } else {
-                    if (prevCh == '\r') {
-                        line += '\r';
-                    }
-                    line += static_cast<char>(ch);
-                }
-
-                prevCh = ch;
-            }
-
-            // flush any partially read line
-            if (!line.empty()) {
-                pushReadLine(line);
-                line.clear();
-            }
-        });
+        outReader.init(
+            &_sp, [this]() { setRunningFalse(); }, subprocess_read_stdout);
+        errReader.init(
+            &_sp, [this]() { setRunningFalse(); }, subprocess_read_stderr);
 
         return _isRunning;
     }
@@ -152,32 +216,6 @@ struct Process::Impl {
         return false;
     }
 
-    int readFromStdout() {
-        FILE *fout = nullptr;
-        {
-            std::lock_guard<std::mutex> g(_mutex);
-            if (_isRunning) {
-                fout = subprocess_stdout(&_sp);
-                if (!fout) {
-                    _isRunning = false;
-                }
-            }
-        }
-
-        if (!fout) {
-            return EOF;
-        }
-
-        char buffer[1];
-        size_t n = fread(buffer, sizeof(char), 1, fout);
-        if (n == 1) {
-            return buffer[0];
-        }
-
-        setRunningFalse();
-        return EOF;
-    }
-
     bool pushWriteLine(const std::string &in) {
         std::lock_guard<std::mutex> g(_mutex);
         if (!_isRunning) {
@@ -198,28 +236,6 @@ struct Process::Impl {
         return true;
     }
 
-    void popReadLines(std::vector<std::string> &out) {
-        std::lock_guard<std::mutex> g(_mutex);
-
-        out.clear();
-        out.assign(_readLines.begin(), _readLines.end());
-        _readLines.clear();
-    }
-
-    void pushReadLine(const std::string &line) {
-        std::lock_guard<std::mutex> g(_mutex);
-        _readLines.push_back(line);
-
-        if (_onReadLine) {
-            _onReadLine(line);
-        }
-    }
-
-    void setOnReadLine(OnReadLine onReadLine) {
-        std::lock_guard<std::mutex> g(_mutex);
-        _onReadLine = onReadLine;
-    }
-
     bool isRunning() {
         std::lock_guard<std::mutex> g(_mutex);
         return _isRunning;
@@ -235,12 +251,31 @@ struct Process::Impl {
         return false;
     }
 
+    void wait(int timeoutMs) {
+        std::vector<std::string> lines;
+        if (timeoutMs > 0 && isRunning()) {
+            auto end = std::chrono::steady_clock::now();
+            end += std::chrono::milliseconds(timeoutMs);
+
+            while (true) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                if (!isRunning() || std::chrono::steady_clock::now() >= end) {
+                    break;
+                }
+            }
+        }
+    }
+
     bool join(int &retCode) {
         if (!isRunning()) {
+            retCode = -1;
             return false;
         }
 
         int r = subprocess_join(&_sp, &retCode);
+
+        outReader.join();
+        errReader.join();
         dispose();
 
         return (r == 0);
@@ -263,12 +298,12 @@ struct Process::Impl {
             }
         }
 
-        if (_readThread.joinable()) {
-            _readThread.join();
-        }
         if (_writeThread.joinable()) {
             _writeThread.join();
         }
+
+        outReader.join();
+        errReader.join();
     }
 };
 
@@ -297,21 +332,20 @@ int Process::writeLine(const std::string &line) {
     return result;
 }
 
-std::vector<std::string> Process::readLines(int timeoutMs) {
+std::vector<std::string> Process::readStdoutLines(int timeoutMs) {
     std::vector<std::string> lines;
     if (_impl) {
-        if (timeoutMs > 0 && _impl->isRunning()) {
-            auto end = std::chrono::steady_clock::now();
-            end += std::chrono::milliseconds(timeoutMs);
+        _impl->wait(timeoutMs);
+        _impl->outReader.popReadLines(lines);
+    }
+    return lines;
+}
 
-            while (true) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                if (!_impl->isRunning() || std::chrono::steady_clock::now() >= end) {
-                    break;
-                }
-            }
-        }
-        _impl->popReadLines(lines);
+std::vector<std::string> Process::readStderrLines(int timeoutMs) {
+    std::vector<std::string> lines;
+    if (_impl) {
+        _impl->wait(timeoutMs);
+        _impl->errReader.popReadLines(lines);
     }
     return lines;
 }
@@ -331,7 +365,7 @@ int Process::join() {
     if (!_impl) {
         return -1;
     }
-    int retCode;
+    int retCode = -1;
     _impl->join(retCode);
     return retCode;
 }
