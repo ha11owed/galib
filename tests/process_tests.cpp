@@ -99,14 +99,14 @@ TEST_F(ProcessTest, BASH) {
     ASSERT_EQ(0, output[2].outputLines.size());
 }
 
-TEST_F(ProcessTest, SLEEP_KILL) {
+TEST_F(ProcessTest, DISABLED_SLEEP_KILL) {
     std::vector<std::string> cmd{"sleep", "5"};
     Process p(cmd);
     p.kill();
     p.kill();
 }
 
-TEST_F(ProcessTest, EXIT_JOIN) {
+TEST_F(ProcessTest, DISABLED_EXIT_JOIN) {
     std::vector<std::string> cmd{"bash"};
     Process p(cmd);
     p.writeLine("sleep 0");

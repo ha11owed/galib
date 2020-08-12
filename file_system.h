@@ -39,6 +39,9 @@ void findInDirectory(const std::string &rootPath, OnChildEntry onChildEntry,
 
 bool readFile(const std::string &inFile, std::string &outBytes);
 
+/// @brief write the bytes to a file in an atomic way (by writing to a temp file and doing a rename).
+bool writeFile(const std::string &filePath, const std::string &inBytes);
+
 /// @brief returs true if the path exists (but does not check for read or write permissions on the file or dir).
 bool pathExists(const std::string &path);
 

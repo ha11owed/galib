@@ -70,6 +70,22 @@ TEST(FileSystemTest, split) {
     actual = splitPath("\\C:\\abc\\file.txt\\");
     ASSERT_EQ(expected, actual);
 
+    expected = {"dir"};
+    actual = splitPath("/dir");
+    ASSERT_EQ(expected, actual);
+
+    expected = {"dir"};
+    actual = splitPath("dir");
+    ASSERT_EQ(expected, actual);
+
+    expected = {"dir"};
+    actual = splitPath("dir/");
+    ASSERT_EQ(expected, actual);
+
+    expected = {"dir1", "dir2"};
+    actual = splitPath("/dir1/dir2/");
+    ASSERT_EQ(expected, actual);
+
     expected = {};
     actual = splitPath("\\\\\\///\\\\");
     ASSERT_EQ(expected, actual);

@@ -228,6 +228,54 @@ bool readFile(const std::string &inFile, std::string &outBytes) {
     return true;
 }
 
+bool writeFile(const std::string &filePath, const std::string &inBytes) {
+    auto getTempFilePath = [](const std::string &filePath_) {
+        std::string fpTmp_;
+        for (int i = 0; i < 3; i++) {
+            fpTmp_ = filePath_ + std::to_string(10000 + (std::rand() % 100000));
+            if (!pathExists(fpTmp_)) {
+                break;
+            }
+
+            fpTmp_ = "";
+        }
+        return fpTmp_;
+    };
+
+    int r = -1;
+    for (;;) {
+        std::string filePathTmp = getTempFilePath(filePath);
+        if (filePathTmp.empty()) {
+            break;
+        }
+
+        std::ofstream file(filePathTmp, std::ifstream::out | std::ifstream::binary);
+        if (!file) {
+            break;
+        }
+        file.write(inBytes.c_str(), inBytes.size());
+        file.close();
+
+        int r = 0;
+        std::string filePathTmpOld;
+        if (pathExists(filePath)) {
+            filePathTmpOld = getTempFilePath(filePath);
+            r = std::rename(filePath.c_str(), filePathTmpOld.c_str());
+            if (r != 0) {
+                break;
+            }
+        }
+
+        r = std::rename(filePathTmp.c_str(), filePath.c_str());
+
+        if (!filePathTmpOld.empty()) {
+            std::remove(filePathTmpOld.c_str());
+        }
+        break;
+    }
+    return (r == 0);
+}
+
 bool pathExists(const std::string &path) {
     bool exists = false;
     if (!path.empty()) {
@@ -420,7 +468,7 @@ std::vector<std::string> splitPath(const std::string &path) {
         }
     }
 
-    if (start > end && start < n - 1) {
+    if (start >= end && start + 1 < n) {
         parts.push_back(path.substr(start));
     }
     return parts;
