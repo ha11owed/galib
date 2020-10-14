@@ -2,7 +2,7 @@
 #include "gtest/gtest.h"
 #include <chrono>
 
-using namespace ga;
+using namespace galib;
 
 TEST(FileSystemTest, absolutePathUnix) {
     std::vector<std::string> absPaths{

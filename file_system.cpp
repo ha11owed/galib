@@ -14,7 +14,7 @@
 #include <unistd.h>
 #endif
 
-namespace ga {
+namespace galib {
 
 namespace detail {
 #include "tinydir.h"
@@ -596,4 +596,4 @@ bool isAbsolutePath(const std::string &path) {
 
 bool isPathSeparator(char value) { return (value == '/') || (value == '\\'); }
 
-} // namespace ga
+} // namespace galib

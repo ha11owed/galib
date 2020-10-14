@@ -2,7 +2,7 @@
 #include "gtest/gtest.h"
 #include <chrono>
 
-using namespace ga;
+using namespace galib;
 
 class ProcessTest : public ::testing::Test {
   public:

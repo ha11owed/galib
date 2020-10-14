@@ -11,7 +11,7 @@ namespace {
 #include "subprocess.h"
 }
 
-namespace ga {
+namespace galib {
 
 struct Process::Impl {
 
@@ -370,4 +370,4 @@ int Process::join() {
     return retCode;
 }
 
-} // namespace ga
+} // namespace galib

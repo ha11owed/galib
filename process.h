@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace ga {
+namespace galib {
 
 /// @brief Provides an simple crossplatform way to work with processes.
 /// @note All the methods that return an status code (int) will return 0 on success
@@ -49,4 +49,4 @@ class Process {
     std::shared_ptr<Impl> _impl;
 };
 
-} // namespace ga
+} // namespace galib

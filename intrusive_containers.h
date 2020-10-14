@@ -327,9 +327,15 @@ class DictionaryIterator : public std::iterator<std::bidirectional_iterator_tag,
 
 } // namespace detail
 
-// --------------
-// ---- List ----
-// --------------
+/// @brief Intrusive linked list.
+/// @example Item will be contained in (up to) two linked lists:
+/// struct Item {
+///   Link<Item> _all;
+///   Link<Item> _used;
+///   ...
+/// };
+/// List<Item, &Item::_all> allItems;
+/// List<Item, &Item::_used> usedItems;
 template <typename T, Link<T> T::*TLinkField> class List {
   public:
     List();
@@ -505,9 +511,15 @@ typename List<T, TLinkField>::const_iterator List<T, TLinkField>::end() const {
 
 template <typename T, Link<T> T::*TLinkField> void List<T, TLinkField>::clear() { unlinkAll(); }
 
-// -----------------
-// ---- HashSet ----
-// -----------------
+/// @brief Intrusive HashSet.
+/// @example Item will be contained in (up to) two hashsets:
+/// struct Item {
+///   Link<Item> _all;
+///   Link<Item> _used;
+///   ...
+/// };
+/// HashSet<Item, &Item::_all> allItems;
+/// HashSet<Item, &Item::_used> usedItems;
 template <typename T, Link<T> T::*TLinkField, typename Hash = std::hash<T *>, typename Pred = std::equal_to<T *>>
 class HashSet {
   public:
@@ -637,9 +649,14 @@ bool HashSet<T, TLinkField, Hash, Pred>::put(T *value) {
     return true;
 }
 
-// --------------------
-// ---- Dictionary ----
-// --------------------
+/// @brief Intrusive Dictionary.
+/// @example Item can be searched by key in the dictionary:
+/// struct Item {
+///   int key;
+///   Link<Item> _link;
+///   ...
+/// };
+/// Dictionary<Item, int, &Item::key, &Item::_link> dict;
 template <typename T, typename K, K T::*TKeyField, Link<T> T::*TLinkField, typename Hash = std::hash<K>,
           typename Pred = std::equal_to<K>>
 class Dictionary {

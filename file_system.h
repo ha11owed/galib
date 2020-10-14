@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace ga {
+namespace galib {
 
 enum ChildType {
     None,
@@ -65,4 +65,4 @@ bool isAbsolutePath(const std::string &path);
 
 bool isPathSeparator(char value);
 
-} // namespace ga
+} // namespace galib
