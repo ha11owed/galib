@@ -1,3 +1,4 @@
+/// @brief Version 1.0
 #pragma once
 
 #include <functional>
@@ -31,6 +32,12 @@ struct DirectorySearch {
     /// Otherwise only the ones in the set (case sensitive).
     std::set<std::string> allowedExtensions;
 };
+
+/// @brief Creates a new empty directory.
+/// @returns true if a new directory was created, false if the directory already exists or was not created.
+bool createDirectories(const std::string &path);
+
+bool removeDirectory(const std::string &path, bool recursive = true);
 
 using OnChildEntry = std::function<void(const ChildEntry &)>;
 

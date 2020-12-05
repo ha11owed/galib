@@ -205,6 +205,29 @@ TEST(FileSystemTest, relativePathMOk) {
     ASSERT_EQ(expected, actual);
 }
 
+TEST(FileSystemTest, TempDir) {
+    std::string tmpDirRoot = "/tmp/TemporaryDirectory_954353";
+    std::string filePathRoot = "/tmp/TemporaryDirectory_954353/root_file.txt";
+    std::string tmpDir = "/tmp/TemporaryDirectory_954353/sd/dr2/sr";
+    std::string filePath = "/tmp/TemporaryDirectory_954353/sd/dr2/sub_file.txt";
+
+    // Create directories
+    ASSERT_FALSE(pathExists(tmpDirRoot));
+    ASSERT_TRUE(createDirectories(tmpDir));
+    ASSERT_TRUE(pathExists(tmpDir));
+    // Create files
+    ASSERT_TRUE(writeFile(filePath, "test"));
+    ASSERT_TRUE(pathExists(filePath));
+    ASSERT_TRUE(writeFile(filePathRoot, "test"));
+    ASSERT_TRUE(pathExists(filePathRoot));
+    // Try to remove root dir
+    ASSERT_FALSE(removeDirectory(tmpDirRoot, false));
+    ASSERT_TRUE(pathExists(filePath));
+    // Remove root dir
+    ASSERT_TRUE(removeDirectory(tmpDirRoot, true));
+    ASSERT_FALSE(pathExists(tmpDir));
+}
+
 TEST(FileSystemTest, DISABLED_exists) {
     ASSERT_TRUE(pathExists("/usr/bin/"));
     ASSERT_TRUE(pathExists("/usr/bin/bash"));

@@ -5,13 +5,23 @@
 #include <memory>
 
 #ifdef _WIN32
+#include <direct.h>
 #include <io.h>
 #define access _access_s
 #ifndef F_OK
 #define F_OK 0
 #endif
 #else
+#include <sys/stat.h>
 #include <unistd.h>
+#endif
+
+#ifdef _WIN32
+inline int RmDir(const char *dir) { return _rmdir(dir); }
+inline int MkDir(const char *dir) { return _mkdir(dir); }
+#else
+inline int RmDir(const char *dir) { return rmdir(dir); }
+inline int MkDir(const char *dir) { return mkdir(dir, 0777); }
 #endif
 
 namespace galib {
@@ -199,6 +209,62 @@ inline void sumBSandS(const std::string &path, int &nBS, int &nS) {
 }
 
 // ==== public ====
+bool createDirectories(const std::string &path) {
+    bool ok = true;
+
+    if (pathExists(path)) {
+        ok = false;
+    } else {
+        std::deque<std::string> q;
+        q.push_front(path);
+        while (!q.empty()) {
+            std::string parent = getParent(q.front());
+            if (pathExists(parent)) {
+                break;
+            }
+
+            q.push_front(parent);
+        }
+
+        for (const std::string &path : q) {
+            ok = (0 == MkDir(path.c_str()));
+            if (!ok) {
+                break;
+            }
+        }
+    }
+    return ok;
+}
+
+bool removeDirectory(const std::string &rootPath, bool recursive) {
+    if (recursive) {
+        std::deque<std::string> files;
+        std::deque<std::string> dirs;
+
+        DirectorySearch ds;
+        ds.maxRecursionLevel = 9999;
+        ds.includeDirectories = true;
+        ds.includeFiles = true;
+        findInDirectory(
+            rootPath,
+            [&dirs, &files](const ChildEntry &entry) {
+                if (entry.type == ChildType::Directory) {
+                    dirs.push_front(entry.path);
+                } else {
+                    files.push_back(entry.path);
+                }
+            },
+            ds);
+        for (const std::string &path : files) {
+            std::remove(path.c_str());
+        }
+        for (const std::string &path : dirs) {
+            RmDir(path.c_str());
+        }
+    }
+    RmDir(rootPath.c_str());
+    return !pathExists(rootPath);
+}
 
 void findInDirectory(const std::string &rootPath, OnChildEntry onChildEntry, const DirectorySearch &filter) {
     detail::Directory d(rootPath);
@@ -256,7 +322,7 @@ bool writeFile(const std::string &filePath, const std::string &inBytes) {
         file.write(inBytes.c_str(), inBytes.size());
         file.close();
 
-        int r = 0;
+        r = 0;
         std::string filePathTmpOld;
         if (pathExists(filePath)) {
             filePathTmpOld = getTempFilePath(filePath);
